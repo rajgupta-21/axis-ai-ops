@@ -1,0 +1,1291 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PatchImpact — Server Version & Patch Impact Analysis</title>
+    <style>
+      :root {
+        --k-text-primary: #171717;
+        --k-text-secondary: #525252;
+        --k-text-tertiary: #737373;
+        --k-text-quaternary: #a3a3a3;
+        --k-surface: #fafafa;
+        --k-surface-muted: #f5f5f5;
+        --k-surface-raised: #ffffff;
+        --k-surface-strong: #e5e5e5;
+        --k-border: #e5e5e5;
+        --k-danger: #dc2626;
+        --k-danger-soft: #fef2f2;
+        --k-positive: #16a34a;
+        --k-positive-soft: #f0fdf4;
+        --k-warning: #d97706;
+        --k-warning-soft: #fffbeb;
+        --k-accent: #2563eb;
+        --k-accent-soft: #eff6ff;
+        --k-radius-sm: 6px;
+        --k-radius-md: 8px;
+        --k-radius-lg: 10px;
+        --k-radius-xl: 12px;
+        --k-space-1: 4px;
+        --k-space-2: 8px;
+        --k-space-3: 12px;
+        --k-space-4: 16px;
+        --k-space-5: 20px;
+        --k-space-6: 24px;
+        --k-space-8: 32px;
+        --k-font:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        --k-mono:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier,
+          monospace;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--k-font);
+        background: var(--k-surface);
+        color: var(--k-text-primary);
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      .app {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: var(--k-space-6);
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        gap: var(--k-space-6);
+      }
+      .topbar {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: var(--k-space-4);
+        border-bottom: 1px solid var(--k-border);
+        margin-bottom: var(--k-space-2);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: var(--k-space-3);
+      }
+      .brand-icon {
+        width: 32px;
+        height: 32px;
+        background: var(--k-text-primary);
+        color: white;
+        border-radius: var(--k-radius-md);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .brand h1 {
+        font-size: 17px;
+        font-weight: 500;
+      }
+      .brand span {
+        color: var(--k-text-tertiary);
+        font-size: 13px;
+        font-weight: 400;
+      }
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--k-space-3);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--k-space-2);
+        padding: var(--k-space-2) var(--k-space-4);
+        border-radius: var(--k-radius-md);
+        border: 1px solid var(--k-border);
+        background: var(--k-surface-raised);
+        color: var(--k-text-primary);
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .btn:hover {
+        background: var(--k-surface-muted);
+        border-color: var(--k-text-quaternary);
+      }
+      .btn-primary {
+        background: var(--k-text-primary);
+        color: white;
+        border-color: var(--k-text-primary);
+      }
+      .btn-primary:hover {
+        background: var(--k-text-secondary);
+        border-color: var(--k-text-secondary);
+      }
+      .btn-icon {
+        width: 16px;
+        height: 16px;
+      }
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: var(--k-space-6);
+      }
+      .panel {
+        background: var(--k-surface-raised);
+        border: 1px solid var(--k-border);
+        border-radius: var(--k-radius-xl);
+        overflow: hidden;
+      }
+      .panel-header {
+        padding: var(--k-space-4);
+        border-bottom: 1px solid var(--k-border);
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--k-text-secondary);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .server-list {
+        list-style: none;
+      }
+      .server-item {
+        padding: var(--k-space-3) var(--k-space-4);
+        border-bottom: 1px solid var(--k-border);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        transition: background 0.15s ease;
+      }
+      .server-item:last-child {
+        border-bottom: none;
+      }
+      .server-item:hover {
+        background: var(--k-surface-muted);
+      }
+      .server-item.active {
+        background: var(--k-accent-soft);
+        border-left: 3px solid var(--k-accent);
+      }
+      .server-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .server-name {
+        font-size: 13px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: var(--k-space-2);
+      }
+      .server-meta {
+        font-size: 12px;
+        color: var(--k-text-tertiary);
+        font-family: var(--k-mono);
+      }
+      .server-status {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--k-positive);
+      }
+      .server-status.warn {
+        background: var(--k-warning);
+      }
+      .server-status.crit {
+        background: var(--k-danger);
+      }
+      .main {
+        display: flex;
+        flex-direction: column;
+        gap: var(--k-space-6);
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: var(--k-space-4);
+      }
+      .metric-card {
+        background: var(--k-surface-raised);
+        border: 1px solid var(--k-border);
+        border-radius: var(--k-radius-xl);
+        padding: var(--k-space-5);
+        display: flex;
+        flex-direction: column;
+        gap: var(--k-space-3);
+      }
+      .metric-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--k-text-tertiary);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .metric-icon {
+        width: 20px;
+        height: 20px;
+        color: var(--k-text-quaternary);
+      }
+      .metric-value {
+        font-size: 28px;
+        font-weight: 500;
+        line-height: 1.1;
+        font-variant-numeric: tabular-nums;
+      }
+      .metric-sub {
+        font-size: 12px;
+        color: var(--k-text-tertiary);
+      }
+      .content-grid {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: var(--k-space-6);
+      }
+      .table-wrap {
+        background: var(--k-surface-raised);
+        border: 1px solid var(--k-border);
+        border-radius: var(--k-radius-xl);
+        overflow: hidden;
+      }
+      .table-header {
+        padding: var(--k-space-4) var(--k-space-5);
+        border-bottom: 1px solid var(--k-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .table-title {
+        font-size: 15px;
+        font-weight: 500;
+      }
+      .table-sub {
+        font-size: 12px;
+        color: var(--k-text-tertiary);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th {
+        text-align: left;
+        padding: var(--k-space-3) var(--k-space-5);
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--k-text-tertiary);
+        border-bottom: 1px solid var(--k-border);
+        background: var(--k-surface-muted);
+      }
+      td {
+        padding: var(--k-space-3) var(--k-space-5);
+        border-bottom: 1px solid var(--k-border);
+        color: var(--k-text-secondary);
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      tr:hover td {
+        background: var(--k-surface-muted);
+      }
+      .version {
+        font-family: var(--k-mono);
+        font-size: 12px;
+        background: var(--k-surface-muted);
+        padding: 2px var(--k-space-2);
+        border-radius: var(--k-radius-sm);
+        border: 1px solid var(--k-border);
+      }
+      .version.latest {
+        background: var(--k-positive-soft);
+        color: var(--k-positive);
+        border-color: color-mix(in srgb, var(--k-positive) 20%, transparent);
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px var(--k-space-2);
+        border-radius: var(--k-radius-sm);
+        font-size: 11px;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+      .badge-critical {
+        background: var(--k-danger-soft);
+        color: var(--k-danger);
+      }
+      .badge-high {
+        background: var(--k-warning-soft);
+        color: var(--k-warning);
+      }
+      .badge-medium {
+        background: #fefce8;
+        color: #a16207;
+      }
+      .badge-low {
+        background: var(--k-positive-soft);
+        color: var(--k-positive);
+      }
+      .gap {
+        font-family: var(--k-mono);
+        font-size: 12px;
+        color: var(--k-text-tertiary);
+      }
+      .impact-panel {
+        background: var(--k-surface-raised);
+        border: 1px solid var(--k-border);
+        border-radius: var(--k-radius-xl);
+        padding: var(--k-space-5);
+        display: flex;
+        flex-direction: column;
+        gap: var(--k-space-5);
+      }
+      .impact-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .impact-title {
+        font-size: 15px;
+        font-weight: 500;
+      }
+      .severity {
+        padding: var(--k-space-1) var(--k-space-3);
+        border-radius: var(--k-radius-md);
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+      }
+      .severity-critical {
+        background: var(--k-danger);
+        color: white;
+      }
+      .severity-high {
+        background: var(--k-warning);
+        color: white;
+      }
+      .severity-medium {
+        background: #ca8a04;
+        color: white;
+      }
+      .severity-low {
+        background: var(--k-positive);
+        color: white;
+      }
+      .confidence {
+        display: flex;
+        flex-direction: column;
+        gap: var(--k-space-2);
+      }
+      .confidence-label {
+        font-size: 12px;
+        color: var(--k-text-tertiary);
+        display: flex;
+        justify-content: space-between;
+      }
+      .confidence-bar {
+        height: 6px;
+        background: var(--k-surface-strong);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .confidence-fill {
+        height: 100%;
+        background: var(--k-text-primary);
+        border-radius: 3px;
+        transition: width 0.6s ease;
+      }
+      .risk-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--k-space-3);
+      }
+      .risk-item {
+        padding: var(--k-space-3);
+        border: 1px solid var(--k-border);
+        border-radius: var(--k-radius-lg);
+      }
+      .risk-label {
+        font-size: 11px;
+        color: var(--k-text-tertiary);
+        margin-bottom: var(--k-space-1);
+      }
+      .risk-value {
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .risk-value.danger {
+        color: var(--k-danger);
+      }
+      .risk-value.warning {
+        color: var(--k-warning);
+      }
+      .risk-value.positive {
+        color: var(--k-positive);
+      }
+      .impact-summary {
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--k-text-secondary);
+        padding: var(--k-space-4);
+        background: var(--k-surface-muted);
+        border-radius: var(--k-radius-lg);
+        border-left: 3px solid var(--k-accent);
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: var(--k-space-2);
+      }
+      .action-item {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--k-space-3);
+        font-size: 13px;
+        color: var(--k-text-secondary);
+        padding: var(--k-space-2) 0;
+      }
+      .action-num {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--k-surface-strong);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 500;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .bottom-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--k-space-6);
+      }
+      .check-panel,
+      .rollback-panel {
+        background: var(--k-surface-raised);
+        border: 1px solid var(--k-border);
+        border-radius: var(--k-radius-xl);
+        padding: var(--k-space-5);
+      }
+      .check-title {
+        font-size: 15px;
+        font-weight: 500;
+        margin-bottom: var(--k-space-4);
+        display: flex;
+        align-items: center;
+        gap: var(--k-space-2);
+      }
+      .checklist {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: var(--k-space-3);
+      }
+      .check-item {
+        display: flex;
+        align-items: center;
+        gap: var(--k-space-3);
+        font-size: 13px;
+        color: var(--k-text-secondary);
+      }
+      .check-box {
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--k-border);
+        border-radius: var(--k-radius-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .check-item.done .check-box {
+        background: var(--k-positive);
+        border-color: var(--k-positive);
+        color: white;
+      }
+      .rollback-alert {
+        background: var(--k-warning-soft);
+        border: 1px solid color-mix(in srgb, var(--k-warning) 20%, transparent);
+        border-radius: var(--k-radius-lg);
+        padding: var(--k-space-4);
+        margin-top: var(--k-space-4);
+        font-size: 13px;
+        color: var(--k-text-secondary);
+        line-height: 1.6;
+      }
+      .rollback-alert strong {
+        color: var(--k-warning);
+        font-weight: 500;
+      }
+      .history-item {
+        padding: var(--k-space-3) var(--k-space-4);
+        border-bottom: 1px solid var(--k-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+      }
+      .history-item:last-child {
+        border-bottom: none;
+      }
+      .history-date {
+        color: var(--k-text-tertiary);
+      }
+      .history-sev {
+        font-weight: 500;
+      }
+      .footer {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: var(--k-space-6);
+        font-size: 12px;
+        color: var(--k-text-quaternary);
+        border-top: 1px solid var(--k-border);
+        margin-top: var(--k-space-4);
+      }
+      .loading {
+        position: fixed;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.9);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: var(--k-space-4);
+        z-index: 100;
+      }
+      .loading.active {
+        display: flex;
+      }
+      .spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid var(--k-border);
+        border-top-color: var(--k-text-primary);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .mono {
+        font-family: var(--k-mono);
+      }
+      @media (max-width: 1200px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .metrics {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .content-grid {
+          grid-template-columns: 1fr;
+        }
+        .bottom-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <div
+        style="
+          font-size: 14px;
+          color: var(--k-text-secondary);
+          font-weight: 500;
+        "
+      >
+        Analyzing via Bedrock...
+      </div>
+      <div style="font-size: 12px; color: var(--k-text-tertiary)">
+        Claude Sonnet 5 processing impact assessment
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="2" y="3" width="20" height="8" rx="2" />
+              <rect x="2" y="13" width="20" height="8" rx="2" />
+              <path d="M6 7h.01M6 17h.01" />
+            </svg>
+          </div>
+          <div>
+            <h1>
+              PatchImpact <span>| Server version & patch impact analysis</span>
+            </h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              font-size: 13px;
+              color: var(--k-text-tertiary);
+            "
+          >
+            <span class="mono" id="lastUpdated">Aug 12, 2026, 21:11 IST</span>
+          </div>
+          <button class="btn" onclick="reanalyze()">
+            <svg
+              class="btn-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"
+              />
+            </svg>
+            Re-analyze
+          </button>
+          <button class="btn btn-primary" onclick="downloadPDF()">
+            <svg
+              class="btn-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"
+              />
+            </svg>
+            Download PDF
+          </button>
+        </div>
+      </header>
+
+      <aside class="sidebar">
+        <div class="panel">
+          <div class="panel-header">
+            Infrastructure
+            <span
+              style="
+                font-size: 11px;
+                color: var(--k-text-quaternary);
+                font-weight: 400;
+              "
+              >3 servers</span
+            >
+          </div>
+          <ul class="server-list" id="serverList"></ul>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">Analysis history</div>
+          <div id="historyList"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">Latest releases</div>
+          <div
+            style="
+              padding: var(--k-space-3) var(--k-space-4);
+              font-size: 12px;
+              color: var(--k-text-secondary);
+            "
+          >
+            <div style="margin-bottom: var(--k-space-3)">
+              <div style="font-weight: 500; color: var(--k-text-primary)">
+                OpenSSL 3.0.14
+              </div>
+              <div style="color: var(--k-text-tertiary); margin-top: 2px">
+                Security patch · 3 CVE fixes
+              </div>
+            </div>
+            <div style="margin-bottom: var(--k-space-3)">
+              <div style="font-weight: 500; color: var(--k-text-primary)">
+                nginx 1.27.0
+              </div>
+              <div style="color: var(--k-text-tertiary); margin-top: 2px">
+                Stable · HTTP/3 improvements
+              </div>
+            </div>
+            <div>
+              <div style="font-weight: 500; color: var(--k-text-primary)">
+                PostgreSQL 15.7
+              </div>
+              <div style="color: var(--k-text-tertiary); margin-top: 2px">
+                Bug fix release
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="metrics" id="metrics"></div>
+
+        <div class="content-grid">
+          <div class="table-wrap">
+            <div class="table-header">
+              <div>
+                <div class="table-title">Software inventory & version gaps</div>
+                <div class="table-sub">
+                  Current state vs latest available release
+                </div>
+              </div>
+              <div
+                style="font-size: 12px; color: var(--k-text-tertiary)"
+                class="mono"
+                id="osInfo"
+              >
+                Ubuntu 22.04.4 LTS
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Component</th>
+                  <th>Current</th>
+                  <th>Latest</th>
+                  <th>Gap</th>
+                  <th>Risk</th>
+                </tr>
+              </thead>
+              <tbody id="softwareTable"></tbody>
+            </table>
+          </div>
+
+          <div class="impact-panel">
+            <div class="impact-header">
+              <div class="impact-title">Impact assessment</div>
+              <span class="severity severity-critical" id="severityBadge"
+                >CRITICAL</span
+              >
+            </div>
+            <div class="confidence">
+              <div class="confidence-label">
+                <span>AI confidence</span>
+                <span class="mono" id="confidenceValue">87%</span>
+              </div>
+              <div class="confidence-bar">
+                <div
+                  class="confidence-fill"
+                  style="width: 87%"
+                  id="confidenceBar"
+                ></div>
+              </div>
+            </div>
+            <div class="risk-grid">
+              <div class="risk-item">
+                <div class="risk-label">Security impact</div>
+                <div class="risk-value danger" id="secImpact">High</div>
+              </div>
+              <div class="risk-item">
+                <div class="risk-label">Compatibility</div>
+                <div class="risk-value warning" id="compImpact">Medium</div>
+              </div>
+              <div class="risk-item">
+                <div class="risk-label">Operational risk</div>
+                <div class="risk-value positive" id="opsRisk">Low</div>
+              </div>
+              <div class="risk-item">
+                <div class="risk-label">Downtime est.</div>
+                <div class="risk-value mono" id="downtime">12 min</div>
+              </div>
+            </div>
+            <div class="impact-summary" id="impactSummary">
+              OpenSSL 3.0.8 → 3.0.14 contains 3 CVE fixes including
+              CVE-2024-XXXX (HIGH). Nginx major version jump requires config
+              syntax validation. PostgreSQL patch is safe to apply with minimal
+              downtime.
+            </div>
+            <div
+              style="
+                border-top: 1px solid var(--k-border);
+                padding-top: var(--k-space-4);
+              "
+            >
+              <div
+                style="
+                  font-size: 13px;
+                  font-weight: 500;
+                  margin-bottom: var(--k-space-3);
+                "
+              >
+                Recommended actions
+              </div>
+              <div class="actions" id="actionsList"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bottom-grid">
+          <div class="check-panel">
+            <div class="check-title">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                style="color: var(--k-positive)"
+              >
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+              Pre-upgrade checks
+            </div>
+            <ul class="checklist" id="checklist"></ul>
+          </div>
+
+          <div class="rollback-panel">
+            <div class="check-title">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                style="color: var(--k-warning)"
+              >
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+              Rollback considerations
+            </div>
+            <div
+              style="
+                font-size: 13px;
+                color: var(--k-text-secondary);
+                line-height: 1.6;
+              "
+            >
+              <p style="margin-bottom: var(--k-space-3)">
+                Snapshot <span class="mono">snap-2026-08-12-001</span> created
+                automatically before analysis. Estimated rollback time:
+                <strong>8 minutes</strong>.
+              </p>
+              <p>
+                Database replication is active; failover to
+                <span class="mono">prod-web-02</span> is pre-configured. Service
+                restart required for OpenSSL downgrade.
+              </p>
+            </div>
+            <div class="rollback-alert">
+              <strong>Warning:</strong> Nginx 1.24 → 1.27 config migration is
+              not automatically reversible. Maintain a backup of
+              <span class="mono">/etc/nginx/nginx.conf</span> and site-enabled
+              configurations.
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer class="footer">
+        Analysis and recommendation only — this system will never automatically
+        patch or modify servers. &nbsp;|&nbsp; Data sourced from Ansible/AWX
+        &nbsp;|&nbsp; Assessment generated by Claude Sonnet 5 via Amazon Bedrock
+      </footer>
+    </div>
+
+    <script>
+      const servers = [
+        {
+          id: "prod-web-01",
+          name: "prod-web-01",
+          ip: "10.0.1.45",
+          health: 94,
+          cpu: 42,
+          memory: 68,
+          disk: 78,
+          os: "Ubuntu 22.04.4 LTS",
+          status: "warn",
+          lastAnalyzed: "Aug 12, 2026, 21:11 IST",
+          severity: "CRITICAL",
+          confidence: 87,
+          secImpact: "High",
+          compImpact: "Medium",
+          opsRisk: "Low",
+          downtime: "12 min",
+          summary:
+            "OpenSSL 3.0.8 → 3.0.14 contains 3 CVE fixes including CVE-2024-XXXX (HIGH). Nginx major version jump requires config syntax validation. PostgreSQL patch is safe to apply with minimal downtime.",
+          software: [
+            {
+              name: "OpenSSL",
+              current: "3.0.8",
+              latest: "3.0.14",
+              gap: "Patch+Sec",
+              risk: "CRITICAL",
+            },
+            {
+              name: "nginx",
+              current: "1.24.0",
+              latest: "1.27.0",
+              gap: "Major",
+              risk: "HIGH",
+            },
+            {
+              name: "Python",
+              current: "3.11.2",
+              latest: "3.12.4",
+              gap: "Major",
+              risk: "MEDIUM",
+            },
+            {
+              name: "PostgreSQL",
+              current: "15.2",
+              latest: "15.7",
+              gap: "Patch",
+              risk: "LOW",
+            },
+            {
+              name: "systemd",
+              current: "252.17",
+              latest: "252.30",
+              gap: "Patch",
+              risk: "LOW",
+            },
+            {
+              name: "Docker",
+              current: "24.0.7",
+              latest: "27.1.2",
+              gap: "Major",
+              risk: "MEDIUM",
+            },
+          ],
+          actions: [
+            "Prioritize OpenSSL upgrade due to active CVE exposure",
+            "Validate nginx configuration against v1.27 breaking changes",
+            "Schedule PostgreSQL patch during next maintenance window",
+            "Test Python 3.12 compatibility in staging before production deployment",
+          ],
+          checks: [
+            { label: "Configuration backup created", done: true },
+            { label: "Staging environment matches production", done: true },
+            { label: "Dependency compatibility verified", done: false },
+            { label: "Rollback snapshot validated", done: true },
+            { label: "Maintenance window scheduled", done: false },
+          ],
+          history: [
+            { date: "Aug 12, 21:11", sev: "CRITICAL" },
+            { date: "Aug 11, 14:30", sev: "HIGH" },
+            { date: "Aug 09, 09:15", sev: "MEDIUM" },
+          ],
+        },
+        {
+          id: "prod-db-01",
+          name: "prod-db-01",
+          ip: "10.0.1.46",
+          health: 98,
+          cpu: 35,
+          memory: 52,
+          disk: 45,
+          os: "RHEL 9.3",
+          status: "positive",
+          lastAnalyzed: "Aug 12, 2026, 20:45 IST",
+          severity: "LOW",
+          confidence: 92,
+          secImpact: "Low",
+          compImpact: "Low",
+          opsRisk: "Low",
+          downtime: "4 min",
+          summary:
+            "All packages within 1 patch version. No security advisories. Routine maintenance recommended.",
+          software: [
+            {
+              name: "PostgreSQL",
+              current: "15.6",
+              latest: "15.7",
+              gap: "Patch",
+              risk: "LOW",
+            },
+            {
+              name: "Patroni",
+              current: "3.2.2",
+              latest: "3.3.0",
+              gap: "Minor",
+              risk: "LOW",
+            },
+            {
+              name: "etcd",
+              current: "3.5.12",
+              latest: "3.5.15",
+              gap: "Patch",
+              risk: "LOW",
+            },
+          ],
+          actions: [
+            "Apply PostgreSQL 15.7 patch during next window",
+            "Review Patroni release notes for new features",
+          ],
+          checks: [
+            { label: "Replication lag < 1s", done: true },
+            { label: "Backup verified", done: true },
+            { label: "Failover tested", done: true },
+          ],
+          history: [
+            { date: "Aug 12, 20:45", sev: "LOW" },
+            { date: "Aug 05, 11:20", sev: "LOW" },
+          ],
+        },
+        {
+          id: "staging-app-01",
+          name: "staging-app-01",
+          ip: "10.0.2.12",
+          health: 88,
+          cpu: 71,
+          memory: 84,
+          disk: 62,
+          os: "Ubuntu 24.04 LTS",
+          status: "warn",
+          lastAnalyzed: "Aug 12, 2026, 19:30 IST",
+          severity: "MEDIUM",
+          confidence: 79,
+          secImpact: "Medium",
+          compImpact: "High",
+          opsRisk: "Medium",
+          downtime: "22 min",
+          summary:
+            "High resource utilization detected. Kernel upgrade available but requires reboot. Node.js LTS transition presents module compatibility risk.",
+          software: [
+            {
+              name: "Node.js",
+              current: "18.19.0",
+              latest: "20.15.0",
+              gap: "Major LTS",
+              risk: "HIGH",
+            },
+            {
+              name: "Linux kernel",
+              current: "6.8.0",
+              latest: "6.8.12",
+              gap: "Patch",
+              risk: "MEDIUM",
+            },
+            {
+              name: "Redis",
+              current: "7.2.4",
+              latest: "7.4.0",
+              gap: "Minor",
+              risk: "MEDIUM",
+            },
+          ],
+          actions: [
+            "Plan Node.js 20 migration with full regression test",
+            "Schedule kernel patch during approved reboot window",
+            "Monitor memory utilization — consider vertical scaling",
+          ],
+          checks: [
+            { label: "Load test completed", done: false },
+            { label: "Reboot window approved", done: false },
+            { label: "Snapshot created", done: true },
+          ],
+          history: [{ date: "Aug 12, 19:30", sev: "MEDIUM" }],
+        },
+      ];
+
+      let activeServer = servers[0];
+
+      const sevColor = (s) =>
+        s === "CRITICAL"
+          ? "danger"
+          : s === "HIGH" || s === "MEDIUM"
+            ? "warning"
+            : "positive";
+
+      function render() {
+        document.getElementById("serverList").innerHTML = servers
+          .map(
+            (s) => `
+    <li class="server-item ${s.id === activeServer.id ? "active" : ""}" onclick="selectServer('${s.id}')">
+      <div class="server-info">
+        <div class="server-name"><span class="server-status ${s.status}"></span>${s.name}</div>
+        <div class="server-meta">${s.ip} · ${s.os}</div>
+      </div>
+      <span class="badge badge-${s.severity.toLowerCase()}">${s.severity}</span>
+    </li>
+  `,
+          )
+          .join("");
+
+        document.getElementById("metrics").innerHTML = `
+    <div class="metric-card">
+      <div class="metric-header">
+        Health score
+        <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      </div>
+      <div class="metric-value" style="color: ${activeServer.health > 90 ? "var(--k-positive)" : activeServer.health > 75 ? "var(--k-warning)" : "var(--k-danger)"}">${activeServer.health}%</div>
+      <div class="metric-sub">Overall system health</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-header">
+        CPU utilization
+        <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+      </div>
+      <div class="metric-value">${activeServer.cpu}%</div>
+      <div class="metric-sub">8 cores · load 0.84</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-header">
+        Memory
+        <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7h20M2 11h20M2 15h20M2 19h20"/><rect x="6" y="3" width="12" height="18" rx="2"/></svg>
+      </div>
+      <div class="metric-value" style="color: ${activeServer.memory > 80 ? "var(--k-danger)" : activeServer.memory > 60 ? "var(--k-warning)" : "var(--k-text-primary)"}">${activeServer.memory}%</div>
+      <div class="metric-sub">54.4 GB / 64 GB used</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-header">
+        Disk usage
+        <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="12" rx="10" ry="4"/><path d="M12 2v20"/><path d="M2 12c0 5.5 4.5 10 10 10s10-4.5 10-10"/></svg>
+      </div>
+      <div class="metric-value">${activeServer.disk}%</div>
+      <div class="metric-sub">390 GB / 500 GB used</div>
+    </div>
+  `;
+
+        document.getElementById("osInfo").textContent = activeServer.os;
+        document.getElementById("softwareTable").innerHTML =
+          activeServer.software
+            .map(
+              (sw) => `
+    <tr>
+      <td style="font-weight:500;color:var(--k-text-primary);">${sw.name}</td>
+      <td><span class="version">${sw.current}</span></td>
+      <td><span class="version latest">${sw.latest}</span></td>
+      <td><span class="gap">${sw.gap}</span></td>
+      <td><span class="badge badge-${sw.risk.toLowerCase()}">${sw.risk}</span></td>
+    </tr>
+  `,
+            )
+            .join("");
+
+        document.getElementById("severityBadge").textContent =
+          activeServer.severity;
+        document.getElementById("severityBadge").className =
+          `severity severity-${activeServer.severity.toLowerCase()}`;
+        document.getElementById("confidenceValue").textContent =
+          activeServer.confidence + "%";
+        document.getElementById("confidenceBar").style.width =
+          activeServer.confidence + "%";
+        document.getElementById("secImpact").textContent =
+          activeServer.secImpact;
+        document.getElementById("secImpact").className =
+          `risk-value ${sevColor(activeServer.secImpact)}`;
+        document.getElementById("compImpact").textContent =
+          activeServer.compImpact;
+        document.getElementById("compImpact").className =
+          `risk-value ${sevColor(activeServer.compImpact)}`;
+        document.getElementById("opsRisk").textContent = activeServer.opsRisk;
+        document.getElementById("opsRisk").className =
+          `risk-value ${sevColor(activeServer.opsRisk)}`;
+        document.getElementById("downtime").textContent = activeServer.downtime;
+        document.getElementById("impactSummary").textContent =
+          activeServer.summary;
+
+        document.getElementById("actionsList").innerHTML = activeServer.actions
+          .map(
+            (a, i) => `
+    <div class="action-item"><div class="action-num">${i + 1}</div><div>${a}</div></div>
+  `,
+          )
+          .join("");
+
+        document.getElementById("checklist").innerHTML = activeServer.checks
+          .map(
+            (c) => `
+    <li class="check-item ${c.done ? "done" : ""}">
+      <div class="check-box">
+        ${c.done ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : ""}
+      </div>
+      ${c.label}
+    </li>
+  `,
+          )
+          .join("");
+
+        document.getElementById("historyList").innerHTML = activeServer.history
+          .map(
+            (h) => `
+    <div class="history-item">
+      <span class="history-date">${h.date}</span>
+      <span class="history-sev" style="color: var(--k-${sevColor(h.sev)});">${h.sev}</span>
+    </div>
+  `,
+          )
+          .join("");
+
+        document.getElementById("lastUpdated").textContent =
+          activeServer.lastAnalyzed;
+      }
+
+      function selectServer(id) {
+        activeServer = servers.find((s) => s.id === id);
+        render();
+      }
+
+      function reanalyze() {
+        const loading = document.getElementById("loading");
+        loading.classList.add("active");
+        setTimeout(() => {
+          loading.classList.remove("active");
+          activeServer.lastAnalyzed =
+            new Date().toLocaleString("en-IN", {
+              dateStyle: "medium",
+              timeStyle: "short",
+            }) + " IST";
+          activeServer.confidence = Math.min(
+            99,
+            activeServer.confidence + Math.floor(Math.random() * 5),
+          );
+          activeServer.history.unshift({
+            date:
+              activeServer.lastAnalyzed
+                .replace("Aug ", "Aug ")
+                .split(",")[0]
+                .trim() +
+              ", " +
+              activeServer.lastAnalyzed.split(" ").slice(-2)[0],
+            sev: activeServer.severity,
+          });
+          if (activeServer.history.length > 5) activeServer.history.pop();
+          render();
+        }, 2500);
+      }
+
+      function downloadPDF() {
+        alert("PDF report generation started. Download will begin shortly.");
+      }
+
+      render();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,168 @@
+// Server Version & Patch Impact Analysis — database schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ServerStatus {
+  healthy
+  warning
+  critical
+  unknown
+}
+
+enum ServiceStatus {
+  running
+  stopped
+  unknown
+}
+
+enum ImpactLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ConfidenceLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Server {
+  id              String   @id
+  hostname        String   @unique
+  ipAddress       String   @map("ip_address")
+  osName          String   @map("os_name")
+  osVersion       String   @map("os_version")
+  status          ServerStatus @default(unknown)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  lastCollectedAt DateTime? @map("last_collected_at")
+
+  snapshots ServerSnapshot[]
+  analyses  ImpactAnalysis[]
+
+  @@map("servers")
+}
+
+model ServerSnapshot {
+  id                 String   @id @default(uuid())
+  serverId           String   @map("server_id")
+  kernel             String
+  architecture       String
+  cpuCores           Int      @map("cpu_cores")
+  cpuUsagePercent    Int      @map("cpu_usage_percent")
+  memoryTotalMb      Int      @map("memory_total_mb")
+  memoryUsedPercent  Int      @map("memory_used_percent")
+  diskTotalGb        Int      @map("disk_total_gb")
+  diskUsedPercent    Int      @map("disk_used_percent")
+  networkData        Json?    @map("network_data")
+  services           Json
+  modules            Json
+  configuration      Json
+  collectedAt        DateTime @map("collected_at")
+
+  server            Server              @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  softwareInventory SoftwareInventory[]
+  comparisons       Comparison[]
+
+  @@index([serverId])
+  @@map("server_snapshots")
+}
+
+model SoftwareInventory {
+  id         String   @id @default(uuid())
+  snapshotId String   @map("snapshot_id")
+  name       String
+  version    String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  snapshot ServerSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+  @@map("software_inventory")
+}
+
+model ReleaseInformation {
+  id                    String   @id @default(uuid())
+  software              String
+  currentVersion        String   @map("current_version")
+  latestVersion         String   @map("latest_version")
+  releaseDate           String   @map("release_date")
+  changes               Json
+  securityChanges       Json     @map("security_changes")
+  configurationChanges  Json     @map("configuration_changes")
+  compatibilityChanges  Json     @map("compatibility_changes")
+  source                String
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  comparisons Comparison[]
+
+  @@map("release_information")
+}
+
+model Comparison {
+  id                            String   @id @default(uuid())
+  serverSnapshotId              String   @map("server_snapshot_id")
+  releaseInformationId          String   @map("release_information_id")
+  component                     String
+  versionGap                    Json     @map("version_gap")
+  securityChangesDetected       Boolean  @map("security_changes_detected")
+  configurationChangesDetected  Boolean  @map("configuration_changes_detected")
+  serverDependencies            Json     @map("server_dependencies")
+  riskFactors                   Json     @map("risk_factors")
+  createdAt                     DateTime @default(now()) @map("created_at")
+
+  snapshot           ServerSnapshot     @relation(fields: [serverSnapshotId], references: [id], onDelete: Cascade)
+  releaseInformation ReleaseInformation @relation(fields: [releaseInformationId], references: [id], onDelete: Cascade)
+  analysis           ImpactAnalysis?
+
+  @@index([serverSnapshotId])
+  @@index([releaseInformationId])
+  @@map("comparisons")
+}
+
+model ImpactAnalysis {
+  id                      String          @id @default(uuid())
+  serverId                String          @map("server_id")
+  comparisonId            String          @unique @map("comparison_id")
+  impactLevel             ImpactLevel     @map("impact_level")
+  confidence              ConfidenceLevel
+  executiveSummary        String          @map("executive_summary")
+  reasoning               Json
+  risks                   Json
+  securityImpact          Json            @map("security_impact")
+  compatibilityImpact     Json            @map("compatibility_impact")
+  operationalRisk         Json            @map("operational_risk")
+  performanceImpact       Json            @map("performance_impact")
+  recommendedActions      Json            @map("recommended_actions")
+  preUpgradeChecks        Json            @map("pre_upgrade_checks")
+  rollbackConsiderations  Json            @map("rollback_considerations")
+  createdAt               DateTime        @default(now()) @map("created_at")
+
+  server     Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  comparison Comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+  report     Report?
+
+  @@index([serverId])
+  @@map("impact_analyses")
+}
+
+model Report {
+  id           String   @id @default(uuid())
+  analysisId   String   @unique @map("analysis_id")
+  reportNumber String   @unique @map("report_number")
+  filePath     String   @map("file_path")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  analysis ImpactAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@map("reports")
+}
