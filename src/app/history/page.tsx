@@ -4,6 +4,7 @@ import { AnalysisRecord } from "@/domain/analysis";
 import { RiskBadge } from "@/components/RiskBadge";
 import { formatDateTime } from "@/lib/format";
 import { HistoryIcon } from "@/components/icons";
+import { PageContainer } from "@/components/PageContainer";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export default async function HistoryPage() {
   }));
 
   return (
+    <PageContainer>
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white">
@@ -104,5 +106,6 @@ export default async function HistoryPage() {
         </table>
       </div>
     </div>
+    </PageContainer>
   );
 }

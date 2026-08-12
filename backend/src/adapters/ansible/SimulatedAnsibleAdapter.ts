@@ -240,6 +240,7 @@ function toSnapshot(def: SimulatedServerDefinition, collectedAt: string): Server
       ports: [...def.ports],
       importantValues: { ...def.importantValues },
       installedPackages: [...def.installedPackages],
+      timezone: "UTC",
     },
     collectedAt,
   };

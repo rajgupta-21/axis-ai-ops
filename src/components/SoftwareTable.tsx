@@ -6,9 +6,11 @@ import { VersionIcon } from "./icons";
 export function SoftwareTable({
   serverId,
   software,
+  readOnly = false,
 }: {
   serverId: string;
   software: SoftwareVersionInfo[];
+  readOnly?: boolean;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -19,7 +21,7 @@ export function SoftwareTable({
             <th className="px-4 py-3">Version</th>
             <th className="px-4 py-3">Version Gap</th>
             <th className="px-4 py-3">Impact</th>
-            <th className="px-4 py-3 text-right">Action</th>
+            {!readOnly && <th className="px-4 py-3 text-right">Action</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -53,9 +55,11 @@ export function SoftwareTable({
                 <td className="px-4 py-3">
                   <RiskBadge level={item.latestImpactLevel} />
                 </td>
-                <td className="px-4 py-3 text-right">
-                  <AnalysisWorkflow serverId={serverId} component={item.name} label="Analyze" />
-                </td>
+                {!readOnly && (
+                  <td className="px-4 py-3 text-right">
+                    <AnalysisWorkflow serverId={serverId} component={item.name} label="Analyze" />
+                  </td>
+                )}
               </tr>
             );
           })}

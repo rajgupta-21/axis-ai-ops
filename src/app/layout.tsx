@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
 import "./globals.css";
-import { NavBar } from "@/components/NavBar";
+import { Sidebar } from "@/components/Sidebar";
+import { apiFetch } from "@/lib/apiClient";
+import { SystemInfo } from "@/domain/system";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,37 +20,28 @@ export const metadata: Metadata = {
   description: "Server Version & Patch Impact Analysis",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+async function getAnsibleProvider(): Promise<string> {
+  try {
+    const info = await apiFetch<SystemInfo>("/api/system/info");
+    return info.ansibleProvider;
+  } catch {
+    return "unknown";
+  }
+}
+
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const ansibleProvider = await getAnsibleProvider();
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-            <Link href="/" className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-sm font-bold text-white">
-                SA
-              </span>
-              <span>
-                <span className="block text-sm font-semibold leading-tight text-slate-900">
-                  Server Impact Analysis
-                </span>
-                <span className="block text-xs leading-tight text-slate-400">
-                  Version &amp; Patch Impact Analysis
-                </span>
-              </span>
-            </Link>
-            <NavBar />
-          </div>
-        </header>
-        <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
-        <footer className="border-t border-slate-200 bg-white">
-          <div className="mx-auto max-w-6xl px-6 py-4 text-xs text-slate-400">
-            Analysis-only platform · No automated patching or remote execution
-          </div>
-        </footer>
+      <body className="flex h-full min-h-full">
+        <Sidebar ansibleProvider={ansibleProvider} />
+        <div className="flex min-h-full flex-1 flex-col overflow-x-hidden">
+          <main className="flex-1">{children}</main>
+        </div>
       </body>
     </html>
   );

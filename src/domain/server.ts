@@ -27,6 +27,7 @@ export interface ConfigurationData {
   ports: number[];
   importantValues: Record<string, string>;
   installedPackages: string[];
+  timezone: string;
 }
 
 export interface ServerSnapshot {

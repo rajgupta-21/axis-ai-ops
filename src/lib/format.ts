@@ -6,6 +6,10 @@ export function formatRelativeCollected(iso: string | null): string {
   return formatDateTime(iso);
 }
 
+export function formatAnalysisCode(id: string): string {
+  return `ANA-${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+}
+
 export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
     day: "2-digit",

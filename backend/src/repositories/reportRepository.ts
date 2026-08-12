@@ -20,3 +20,37 @@ export async function createReport(
 export async function getReportByAnalysisId(analysisId: string) {
   return prisma.report.findUnique({ where: { analysisId } });
 }
+
+export interface ReportListItem {
+  id: string;
+  reportNumber: string;
+  analysisId: string;
+  serverId: string;
+  hostname: string;
+  component: string;
+  impactLevel: string;
+  createdAt: string;
+}
+
+export async function listReports(limit = 200): Promise<ReportListItem[]> {
+  const rows = await prisma.report.findMany({
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: {
+      analysis: {
+        include: { server: true, comparison: true },
+      },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    reportNumber: row.reportNumber,
+    analysisId: row.analysisId,
+    serverId: row.analysis.serverId,
+    hostname: row.analysis.server.hostname,
+    component: row.analysis.comparison.component,
+    impactLevel: row.analysis.impactLevel,
+    createdAt: row.createdAt.toISOString(),
+  }));
+}

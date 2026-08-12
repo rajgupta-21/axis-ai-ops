@@ -6,6 +6,7 @@ import { ServerTable } from "@/components/ServerTable";
 import { AnalysisTimeline } from "@/components/AnalysisTimeline";
 import { RiskBadge } from "@/components/RiskBadge";
 import { StatusBadge } from "@/components/StatusBadge";
+import { PageContainer } from "@/components/PageContainer";
 import {
   AlertTriangleIcon,
   DashboardIcon,
@@ -57,6 +58,7 @@ export default async function DashboardPage() {
     .filter((entry) => entry.reasons.length > 0);
 
   return (
+    <PageContainer>
     <div className="space-y-8">
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white">
@@ -164,6 +166,7 @@ export default async function DashboardPage() {
         </section>
       </div>
     </div>
+    </PageContainer>
   );
 }
 

@@ -38,11 +38,13 @@ export function AnalysisWorkflow({
   serverId,
   component,
   label = "Analyze",
+  variant = "solid",
   className,
 }: {
   serverId: string;
   component: string;
   label?: string;
+  variant?: "solid" | "outline";
   className?: string;
 }) {
   const router = useRouter();
@@ -89,13 +91,18 @@ export function AnalysisWorkflow({
     }
   }
 
+  const variantClass =
+    variant === "outline"
+      ? "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+      : "bg-slate-900 text-white hover:bg-slate-700";
+
   return (
     <div className={className}>
       <button
         type="button"
         onClick={run}
         disabled={running}
-        className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+        className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${variantClass}`}
       >
         <Icon className={`h-4 w-4 ${running ? "animate-spin" : ""}`} />
         {running ? "Analyzing..." : label}

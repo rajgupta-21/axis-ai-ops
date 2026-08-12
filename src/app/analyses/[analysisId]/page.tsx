@@ -5,6 +5,7 @@ import { AnalysisSummary } from "@/components/AnalysisSummary";
 import { AnalysisWorkflow } from "@/components/AnalysisWorkflow";
 import { DownloadReportButton } from "@/components/DownloadReportButton";
 import { formatDateTime } from "@/lib/format";
+import { PageContainer } from "@/components/PageContainer";
 import {
   ChecklistIcon,
   ClockIcon,
@@ -43,6 +44,7 @@ export default async function AnalysisPage({
   const upToDate = comparison.currentVersion === comparison.latestVersion;
 
   return (
+    <PageContainer>
     <div className="space-y-8">
       <AnalysisSummary record={record} />
 
@@ -117,6 +119,7 @@ export default async function AnalysisPage({
         <DownloadReportButton analysisId={record.id} />
       </div>
     </div>
+    </PageContainer>
   );
 }
 
