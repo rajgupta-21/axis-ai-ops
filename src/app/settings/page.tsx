@@ -48,8 +48,19 @@ export default async function SettingsPage() {
             <div className="rounded-lg border border-slate-200 bg-white p-5">
               <p className="text-sm font-semibold text-slate-900">Integration Providers</p>
               <div className="mt-1 divide-y divide-slate-100">
-                <Row label="Ansible / AWX Provider" value={info.ansibleProvider} />
+                <Row label="Ansible Provider" value={info.ansibleProvider} />
+                {info.ansibleHost && (
+                  <Row
+                    label="Ansible Control Node"
+                    value={`${info.ansibleUser}@${info.ansibleHost}:${info.ansiblePort}`}
+                  />
+                )}
+                {info.ansibleInventoryPath && (
+                  <Row label="Inventory Path (on control node)" value={info.ansibleInventoryPath} />
+                )}
                 <Row label="Release Provider" value={info.releaseProvider} />
+                <Row label="Agent Web Search" value={info.webSearchEnabled ? "enabled (Tavily)" : "disabled"} />
+                <Row label="Embedding Model" value={info.embeddingModel} />
                 <Row label="Bedrock Provider" value={info.bedrockProvider} />
                 {info.bedrockModelId && <Row label="Bedrock Model ID" value={info.bedrockModelId} />}
                 {info.awsRegion && <Row label="AWS Region" value={info.awsRegion} />}
@@ -67,7 +78,8 @@ export default async function SettingsPage() {
             <p className="text-xs text-slate-400">
               Providers are switched using environment variables (ANSIBLE_PROVIDER, RELEASE_PROVIDER,
               BEDROCK_PROVIDER) in <code className="rounded bg-slate-100 px-1 py-0.5">backend/.env</code> —
-              no code changes are required.
+              no code changes are required. The Ansible inventory is owned by the Ansible control node
+              itself and is not editable from this application.
             </p>
           </>
         )}

@@ -2,7 +2,7 @@ import { BedrockAdapter } from "./BedrockAdapter";
 import { ComparisonResult } from "@/domain/comparison";
 import { ServerSnapshot } from "@/domain/server";
 import { ReleaseInformation } from "@/domain/release";
-import { ImpactAnalysis, ImpactLevel } from "@/domain/analysis";
+import { AnalysisAgentResult, ImpactAnalysis, ImpactLevel } from "@/domain/analysis";
 
 /**
  * Deterministic, rule-based stand-in for ClaudeBedrockAdapter, used when no
@@ -18,7 +18,8 @@ export class MockBedrockAdapter implements BedrockAdapter {
     comparison: ComparisonResult,
     serverSnapshot: ServerSnapshot,
     release: ReleaseInformation
-  ): Promise<ImpactAnalysis> {
+  ): Promise<AnalysisAgentResult> {
+    const startedAt = new Date().toISOString();
     const hasVersionData = !comparison.versionGap.insufficientData;
     const impactLevel = this.deriveImpactLevel(comparison, serverSnapshot);
     const confidence = hasVersionData && release.latestVersion !== "Insufficient data" ? "HIGH" : "LOW";
@@ -90,7 +91,7 @@ export class MockBedrockAdapter implements BedrockAdapter {
       "Document current configuration before making changes so it can be restored if needed.",
     ];
 
-    return {
+    const analysis: ImpactAnalysis = {
       impactLevel,
       confidence,
       executiveSummary: this.buildExecutiveSummary(comparison, serverSnapshot, impactLevel),
@@ -103,6 +104,21 @@ export class MockBedrockAdapter implements BedrockAdapter {
       recommendedActions,
       preUpgradeChecks,
       rollbackConsiderations,
+    };
+
+    return {
+      analysis,
+      trace: [
+        {
+          node: "mock_rules",
+          label: "Deterministic rule-based analysis (no LLM configured)",
+          status: "simulated",
+          startedAt,
+          endedAt: new Date().toISOString(),
+          summary:
+            "BEDROCK_PROVIDER=mock: no LangGraph agent or LLM call ran. Impact level was derived from a fixed point-scoring rule over the deterministic comparison and resource utilization.",
+        },
+      ],
     };
   }
 

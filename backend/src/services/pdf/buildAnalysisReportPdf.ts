@@ -1,88 +1,18 @@
 import PDFDocument from "pdfkit";
 import { AnalysisRecord } from "@/domain/analysis";
-
-const MARGIN = 54;
-const PAGE_WIDTH = 595.28; // A4 pt
-const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
-
-const COLORS = {
-  navy: "#0f2540",
-  slate: "#334155",
-  muted: "#64748b",
-  border: "#cbd5e1",
-  panel: "#f1f5f9",
-  white: "#ffffff",
-  LOW: "#16a34a",
-  MEDIUM: "#d97706",
-  HIGH: "#dc2626",
-  CRITICAL: "#7c1d1d",
-};
-
-function impactColor(level: string): string {
-  return (COLORS as Record<string, string>)[level] ?? COLORS.slate;
-}
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("en-US", {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: "UTC",
-      timeZoneName: "short",
-    });
-  } catch {
-    return iso;
-  }
-}
-
-function sectionTitle(doc: PDFKit.PDFDocument, number: number, title: string) {
-  doc.moveDown(1);
-  doc
-    .fillColor(COLORS.navy)
-    .font("Helvetica-Bold")
-    .fontSize(14)
-    .text(`${number}. ${title}`, MARGIN, doc.y, { width: CONTENT_WIDTH });
-  doc
-    .moveTo(MARGIN, doc.y + 4)
-    .lineTo(MARGIN + CONTENT_WIDTH, doc.y + 4)
-    .strokeColor(COLORS.border)
-    .lineWidth(1)
-    .stroke();
-  doc.moveDown(0.8);
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(10.5);
-}
-
-function bulletList(doc: PDFKit.PDFDocument, items: string[], emptyLabel = "Insufficient data") {
-  const list = items.length > 0 ? items : [emptyLabel];
-  for (const item of list) {
-    doc.circle(MARGIN + 3, doc.y + 5, 1.6).fill(COLORS.slate);
-    doc
-      .fillColor(COLORS.slate)
-      .text(item, MARGIN + 12, doc.y - 6, { width: CONTENT_WIDTH - 12 });
-    doc.moveDown(0.25);
-  }
-  doc.moveDown(0.4);
-}
-
-function paragraph(doc: PDFKit.PDFDocument, text: string) {
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(10.5).text(text, MARGIN, doc.y, {
-    width: CONTENT_WIDTH,
-    align: "left",
-  });
-  doc.moveDown(0.6);
-}
-
-function keyValueRow(doc: PDFKit.PDFDocument, label: string, value: string) {
-  const y = doc.y;
-  doc.font("Helvetica-Bold").fontSize(10).fillColor(COLORS.navy).text(label, MARGIN, y, { width: 150 });
-  doc.font("Helvetica").fontSize(10).fillColor(COLORS.slate).text(value, MARGIN + 160, y, {
-    width: CONTENT_WIDTH - 160,
-  });
-  doc.moveDown(0.3);
-}
+import {
+  MARGIN,
+  PAGE_WIDTH,
+  CONTENT_WIDTH,
+  COLORS,
+  formatDate,
+  sectionTitle,
+  bulletList,
+  paragraph,
+  keyValueRow,
+  renderImpactBadge,
+  addHeadersAndFooters,
+} from "./pdfHelpers";
 
 export async function buildAnalysisReportPdf(
   record: AnalysisRecord,
@@ -193,31 +123,16 @@ export async function buildAnalysisReportPdf(
       keyValueRow(doc, "Generated At", formatDate(record.createdAt));
       keyValueRow(doc, "Release Source", record.release.source);
 
-      addHeadersAndFooters(doc, record, reportNumber);
+      addHeadersAndFooters(
+        doc,
+        `${reportNumber} — ${record.hostname} — ${record.component}`,
+        "Server Impact Analysis Report — Analysis Only — No Automated Remediation"
+      );
       doc.end();
     } catch (error) {
       reject(error);
     }
   });
-}
-
-function renderImpactBadge(doc: PDFKit.PDFDocument, level: string, confidence: string) {
-  const color = impactColor(level);
-  const y = doc.y;
-  doc.roundedRect(MARGIN, y, 90, 26, 4).fill(color);
-  doc
-    .fillColor(COLORS.white)
-    .font("Helvetica-Bold")
-    .fontSize(11)
-    .text(level, MARGIN, y + 7, { width: 90, align: "center" });
-
-  doc
-    .fillColor(COLORS.slate)
-    .font("Helvetica")
-    .fontSize(10)
-    .text(`Confidence: ${confidence}`, MARGIN + 104, y + 8);
-
-  doc.y = y + 34;
 }
 
 function renderCover(doc: PDFKit.PDFDocument, record: AnalysisRecord, reportNumber: string) {
@@ -266,45 +181,3 @@ function renderCover(doc: PDFKit.PDFDocument, record: AnalysisRecord, reportNumb
     );
 }
 
-function addHeadersAndFooters(doc: PDFKit.PDFDocument, record: AnalysisRecord, reportNumber: string) {
-  const range = doc.bufferedPageRange();
-  for (let i = 0; i < range.count; i++) {
-    doc.switchToPage(range.start + i);
-
-    if (i > 0) {
-      doc
-        .fillColor(COLORS.muted)
-        .font("Helvetica")
-        .fontSize(8)
-        .text(`${reportNumber} — ${record.hostname} — ${record.component}`, MARGIN, 24, {
-          width: CONTENT_WIDTH,
-          align: "left",
-        });
-      doc
-        .moveTo(MARGIN, 38)
-        .lineTo(MARGIN + CONTENT_WIDTH, 38)
-        .strokeColor(COLORS.border)
-        .stroke();
-    }
-
-    doc
-      .fillColor(COLORS.muted)
-      .font("Helvetica")
-      .fontSize(8)
-      .text(
-        "Server Impact Analysis Report — Analysis Only — No Automated Remediation",
-        MARGIN,
-        doc.page.height - 40,
-        { width: CONTENT_WIDTH - 60, align: "left" }
-      );
-
-    doc
-      .fillColor(COLORS.muted)
-      .font("Helvetica")
-      .fontSize(8)
-      .text(`Page ${i + 1} of ${range.count}`, MARGIN, doc.page.height - 40, {
-        width: CONTENT_WIDTH,
-        align: "right",
-      });
-  }
-}

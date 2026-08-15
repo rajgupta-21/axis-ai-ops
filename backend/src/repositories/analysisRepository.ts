@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/db";
 import type { ImpactAnalysisGetPayload } from "@/generated/prisma/models/ImpactAnalysis";
 import { ReleaseInformation } from "@/domain/release";
-import { ComparisonResult } from "@/domain/comparison";
-import { ImpactAnalysis, AnalysisRecord } from "@/domain/analysis";
+import { ComparisonResult, PlaybookImpactContext } from "@/domain/comparison";
+import { ImpactAnalysis, AnalysisRecord, AnalysisSource, ReasoningTraceStep } from "@/domain/analysis";
 
 export async function createReleaseInformation(release: ReleaseInformation): Promise<string> {
   const created = await prisma.releaseInformation.create({
@@ -36,20 +36,29 @@ export async function createComparison(
       configurationChangesDetected: comparison.configurationChanges,
       serverDependencies: comparison.serverDependencies,
       riskFactors: comparison.riskFactors,
+      playbookContext: (comparison.playbook as unknown as object) ?? undefined,
     },
   });
+  return created.id;
+}
+
+export async function createPlaybookInput(rawYaml: string): Promise<string> {
+  const created = await prisma.playbookInput.create({ data: { rawYaml } });
   return created.id;
 }
 
 export async function createImpactAnalysis(
   serverId: string,
   comparisonId: string,
-  analysis: ImpactAnalysis
+  analysis: ImpactAnalysis,
+  options?: { source?: AnalysisSource; playbookInputId?: string; reasoningTrace?: ReasoningTraceStep[] }
 ): Promise<string> {
   const created = await prisma.impactAnalysis.create({
     data: {
       serverId,
       comparisonId,
+      source: options?.source ?? "RELEASE_LOOKUP",
+      playbookInputId: options?.playbookInputId,
       impactLevel: analysis.impactLevel,
       confidence: analysis.confidence,
       executiveSummary: analysis.executiveSummary,
@@ -62,6 +71,7 @@ export async function createImpactAnalysis(
       recommendedActions: analysis.recommendedActions,
       preUpgradeChecks: analysis.preUpgradeChecks,
       rollbackConsiderations: analysis.rollbackConsiderations,
+      reasoningTrace: (options?.reasoningTrace as unknown as object) ?? undefined,
     },
   });
   return created.id;
@@ -87,6 +97,7 @@ function rowToRecord(row: AnalysisRow): AnalysisRecord {
     latestVersion: release.latestVersion,
     impactLevel: row.impactLevel,
     confidence: row.confidence,
+    source: row.source,
     analysis: {
       impactLevel: row.impactLevel,
       confidence: row.confidence,
@@ -110,6 +121,7 @@ function rowToRecord(row: AnalysisRow): AnalysisRecord {
       configurationChanges: row.comparison.configurationChangesDetected,
       serverDependencies: row.comparison.serverDependencies as string[],
       riskFactors: row.comparison.riskFactors as string[],
+      playbook: row.comparison.playbookContext as unknown as PlaybookImpactContext | undefined,
     },
     release: {
       software: release.software,
@@ -122,6 +134,7 @@ function rowToRecord(row: AnalysisRow): AnalysisRecord {
       compatibilityChanges: release.compatibilityChanges as string[],
       source: release.source,
     },
+    reasoningTrace: (row.reasoningTrace as unknown as ReasoningTraceStep[]) ?? [],
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -151,4 +164,21 @@ export async function listRecentAnalyses(limit: number): Promise<AnalysisRecord[
     take: limit,
   });
   return rows.map(rowToRecord);
+}
+
+/** The most recent analysis for every server that has at least one, used for the combined all-servers report. */
+export async function listLatestAnalysisPerServer(): Promise<AnalysisRecord[]> {
+  const rows = await prisma.impactAnalysis.findMany({
+    include: analysisInclude,
+    orderBy: { createdAt: "desc" },
+  });
+
+  const latestByServer = new Map<string, AnalysisRow>();
+  for (const row of rows) {
+    if (!latestByServer.has(row.serverId)) {
+      latestByServer.set(row.serverId, row);
+    }
+  }
+
+  return Array.from(latestByServer.values()).map(rowToRecord);
 }

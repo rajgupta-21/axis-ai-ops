@@ -1,5 +1,6 @@
 export type ImpactLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type ConfidenceLevel = "LOW" | "MEDIUM" | "HIGH";
+export type AnalysisSource = "RELEASE_LOOKUP" | "PLAYBOOK";
 
 export interface ImpactAnalysis {
   impactLevel: ImpactLevel;
@@ -26,6 +27,23 @@ export interface ImpactAnalysis {
   rollbackConsiderations: string[];
 }
 
+export type ReasoningTraceNodeStatus = "ok" | "looped" | "simulated";
+
+export interface ReasoningTraceStep {
+  node: string;
+  label: string;
+  status: ReasoningTraceNodeStatus;
+  startedAt: string;
+  endedAt: string;
+  summary: string;
+  detail?: Record<string, unknown>;
+}
+
+export interface AnalysisAgentResult {
+  analysis: ImpactAnalysis;
+  trace: ReasoningTraceStep[];
+}
+
 export type AnalysisStage =
   | "idle"
   | "collecting"
@@ -45,8 +63,10 @@ export interface AnalysisRecord {
   latestVersion: string;
   impactLevel: ImpactLevel;
   confidence: ConfidenceLevel;
+  source: AnalysisSource;
   analysis: ImpactAnalysis;
   comparison: import("./comparison").ComparisonResult;
   release: import("./release").ReleaseInformation;
+  reasoningTrace: ReasoningTraceStep[];
   createdAt: string;
 }

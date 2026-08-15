@@ -57,6 +57,29 @@ Or, from the repo root, run both at once (after installing both):
 npm run dev:all
 ```
 
+### Redis cache (recommended)
+
+Collecting server facts is several SSH round trips, and identifying the latest
+release for a package is a web search plus an LLM call — per package. A
+first-time server-detail load therefore takes minutes. Redis caches those
+responses, which turns repeat loads into milliseconds:
+
+```bash
+docker compose up -d        # from the repo root
+```
+
+This publishes Redis on **6380**, not the default 6379, so it cannot collide
+with a Redis already installed on the machine. `REDIS_URL` in `backend/.env`
+points at it.
+
+The cache is optional. With Redis stopped the API still answers every request,
+just slowly, and reconnects by itself when Redis comes back. Set
+`CACHE_ENABLED=false` to bypass it deliberately. `GET /api/system/info` reports
+`cacheEnabled` and `cacheConnected`.
+
+A collection or analysis invalidates that server's cached entries immediately,
+so "Collect data" never appears to do nothing.
+
 No local PostgreSQL? From `backend/`, Prisma can spin one up for you:
 
 ```bash

@@ -15,6 +15,13 @@ export interface Server {
 export interface SoftwareComponent {
   name: string;
   version: string;
+  /**
+   * Where the software was found. "package" means the host's package manager
+   * reported it; "source" means it was discovered as an installed binary under
+   * /usr/local or /opt, built from source or unpacked from a tarball. Absent on
+   * snapshots collected before this distinction existed.
+   */
+  origin?: "package" | "source";
 }
 
 export interface ServiceInfo {

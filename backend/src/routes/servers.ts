@@ -6,6 +6,7 @@ import { collectServerData } from "@/services/collectionService";
 import { listServerSoftware } from "@/services/softwareService";
 import { listAnalysesForServer } from "@/repositories/analysisRepository";
 import { analyzeServerSoftware } from "@/services/impactAnalysisService";
+import { analyzeServerFromPlaybook } from "@/services/playbookAnalysisService";
 
 export const serversRouter = Router();
 
@@ -72,6 +73,30 @@ serversRouter.post("/:id/reanalyze", async (req, res) => {
     }
 
     const record = await analyzeServerSoftware(req.params.id, parsed.data.component);
+    ok(res, record);
+  } catch (error) {
+    handleApiError(res, error);
+  }
+});
+
+const AnalyzePlaybookSchema = z.object({
+  playbookYaml: z.string().min(1),
+});
+
+/**
+ * Runs the impact-analysis pipeline against an uploaded Ansible playbook.
+ * The playbook is parsed statically and never executed against this or
+ * any other server.
+ */
+serversRouter.post("/:id/analyze-playbook", async (req, res) => {
+  try {
+    const parsed = AnalyzePlaybookSchema.safeParse(req.body);
+    if (!parsed.success) {
+      fail(res, "VALIDATION_FAILED", "An Ansible playbook (YAML) is required.", 400);
+      return;
+    }
+
+    const record = await analyzeServerFromPlaybook(req.params.id, parsed.data.playbookYaml);
     ok(res, record);
   } catch (error) {
     handleApiError(res, error);

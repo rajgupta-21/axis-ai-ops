@@ -1,12 +1,14 @@
 // Server Version & Patch Impact Analysis — database schema
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [vector]
 }
 
 enum ServerStatus {
@@ -33,6 +35,11 @@ enum ConfidenceLevel {
   LOW
   MEDIUM
   HIGH
+}
+
+enum AnalysisSource {
+  RELEASE_LOOKUP
+  PLAYBOOK
 }
 
 model Server {
@@ -118,6 +125,7 @@ model Comparison {
   configurationChangesDetected  Boolean  @map("configuration_changes_detected")
   serverDependencies            Json     @map("server_dependencies")
   riskFactors                   Json     @map("risk_factors")
+  playbookContext                Json?    @map("playbook_context")
   createdAt                     DateTime @default(now()) @map("created_at")
 
   snapshot           ServerSnapshot     @relation(fields: [serverSnapshotId], references: [id], onDelete: Cascade)
@@ -133,6 +141,8 @@ model ImpactAnalysis {
   id                      String          @id @default(uuid())
   serverId                String          @map("server_id")
   comparisonId            String          @unique @map("comparison_id")
+  source                  AnalysisSource  @default(RELEASE_LOOKUP)
+  playbookInputId         String?         @unique @map("playbook_input_id")
   impactLevel             ImpactLevel     @map("impact_level")
   confidence              ConfidenceLevel
   executiveSummary        String          @map("executive_summary")
@@ -145,14 +155,26 @@ model ImpactAnalysis {
   recommendedActions      Json            @map("recommended_actions")
   preUpgradeChecks        Json            @map("pre_upgrade_checks")
   rollbackConsiderations  Json            @map("rollback_considerations")
+  reasoningTrace          Json?           @map("reasoning_trace")
   createdAt               DateTime        @default(now()) @map("created_at")
 
-  server     Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
-  comparison Comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
-  report     Report?
+  server        Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  comparison    Comparison    @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+  playbookInput PlaybookInput? @relation(fields: [playbookInputId], references: [id], onDelete: SetNull)
+  report        Report?
 
   @@index([serverId])
   @@map("impact_analyses")
+}
+
+model PlaybookInput {
+  id        String   @id @default(uuid())
+  rawYaml   String   @map("raw_yaml")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  analysis ImpactAnalysis?
+
+  @@map("playbook_inputs")
 }
 
 model Report {
@@ -165,4 +187,27 @@ model Report {
   analysis ImpactAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
 
   @@map("reports")
+}
+
+/**
+ * RAG knowledge base — chunks of real, already-fetched release-note text
+ * (from OfficialReleaseAdapter) with an embedding for similarity search.
+ * The `embedding` column is a pgvector `vector(1024)` column added by hand
+ * in the migration SQL (Prisma has no native vector type, so it is declared
+ * `Unsupported` here and Prisma Client never reads/writes it directly — all
+ * embedding reads/writes go through raw SQL). 1024 dims matches common
+ * Bedrock embedding models (Titan Embed Text v2, Cohere Embed v3); adjust
+ * the column width in the migration if a different model is configured.
+ */
+model KnowledgeChunk {
+  id        String   @id @default(uuid())
+  component String
+  version   String?
+  sourceUrl String?  @map("source_url")
+  chunkText String   @map("chunk_text")
+  embedding Unsupported("vector(1024)")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([component])
+  @@map("knowledge_chunks")
 }

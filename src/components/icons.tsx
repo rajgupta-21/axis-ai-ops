@@ -216,6 +216,19 @@ export function SettingsIcon({ className = base }: IconProps) {
   );
 }
 
+export function NetworkIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>
+      <circle cx="5" cy="6" r="2.25" />
+      <circle cx="19" cy="6" r="2.25" />
+      <circle cx="12" cy="12" r="2.25" />
+      <circle cx="5" cy="18" r="2.25" />
+      <circle cx="19" cy="18" r="2.25" />
+      <path d="M7 7.3 10 10.7M17 7.3 14 10.7M10 13.3 7 16.7M14 13.3 17 16.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function InboxIcon({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className={className}>

@@ -43,18 +43,25 @@ export async function analyzeServerSoftware(
   const comparison = compareServerToRelease(installed.name, snapshot, release);
   const comparisonId = await createComparison(snapshotId, releaseId, comparison);
 
-  let analysis;
+  let agentResult;
   try {
-    analysis = await bedrockAdapter.analyzeImpact(comparison, snapshot, release);
-  } catch {
+    agentResult = await bedrockAdapter.analyzeImpact(comparison, snapshot, release);
+  } catch (error) {
+    // Surface the provider's own diagnosis. A rate limit, an expired key and a
+    // malformed response are very different problems, and collapsing them into
+    // one generic string makes a misconfigured or throttled model impossible to
+    // diagnose from the UI.
+    const detail = error instanceof Error ? error.message : "";
     throw new AppError(
       ErrorCodes.ANALYSIS_FAILED,
-      "Impact analysis could not be completed. The collected server and release comparison remains available.",
+      detail
+        ? `Impact analysis could not be completed: ${detail} The collected server and release comparison remains available.`
+        : "Impact analysis could not be completed. The collected server and release comparison remains available.",
       502
     );
   }
 
-  const validated = ImpactAnalysisSchema.safeParse(analysis);
+  const validated = ImpactAnalysisSchema.safeParse(agentResult.analysis);
   if (!validated.success) {
     throw new AppError(
       ErrorCodes.VALIDATION_FAILED,
@@ -63,7 +70,9 @@ export async function analyzeServerSoftware(
     );
   }
 
-  const analysisId = await createImpactAnalysis(serverId, comparisonId, validated.data);
+  const analysisId = await createImpactAnalysis(serverId, comparisonId, validated.data, {
+    reasoningTrace: agentResult.trace,
+  });
 
   const record = await getAnalysisById(analysisId);
   if (!record) {

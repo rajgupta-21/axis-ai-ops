@@ -4,6 +4,7 @@ import { ServerSummary } from "@/domain/server";
 import { AnalysisRecord } from "@/domain/analysis";
 import { ServerTable } from "@/components/ServerTable";
 import { AnalysisTimeline } from "@/components/AnalysisTimeline";
+import { PlaybookAnalysisPanel } from "@/components/PlaybookAnalysisPanel";
 import { RiskBadge } from "@/components/RiskBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PageContainer } from "@/components/PageContainer";
@@ -60,15 +61,17 @@ export default async function DashboardPage() {
   return (
     <PageContainer>
     <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white">
-          <DashboardIcon className="h-5 w-5" />
-        </span>
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Operational overview of monitored servers and recent impact analyses.
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white">
+            <DashboardIcon className="h-5 w-5" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Operational overview of monitored servers and recent impact analyses.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -87,6 +90,10 @@ export default async function DashboardPage() {
         <div className="mt-3">
           <ServerTable servers={servers} />
         </div>
+      </section>
+
+      <section>
+        <PlaybookAnalysisPanel servers={servers} />
       </section>
 
       <div className="grid gap-8 lg:grid-cols-2">

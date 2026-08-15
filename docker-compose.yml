@@ -1,0 +1,45 @@
+# Redis for the backend's response cache.
+#
+# Only Redis lives here. PostgreSQL is deliberately left out: this project points
+# DATABASE_URL at a Prisma-managed dev database on its own port, and adding a
+# second Postgres here would leave two plausible databases for one connection
+# string.
+#
+#   docker compose up -d          start
+#   docker compose logs -f redis  follow
+#   docker compose down           stop (data survives in the named volume)
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ias-redis
+    restart: unless-stopped
+    ports:
+      # Host port 6380, not 6379: this machine already runs a Homebrew Redis on
+      # the default port, and taking it would break whatever else uses it. The
+      # container still listens on 6379 internally, so REDIS_URL is the only
+      # place the offset appears.
+      #
+      # Bound to loopback only. The cache holds collected server inventory, so it
+      # should not be reachable from the network on a developer machine.
+      - "127.0.0.1:6380:6379"
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      # The cache is disposable by definition, so a memory ceiling with LRU
+      # eviction is safer than letting it grow until the host is under pressure.
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  redis-data:

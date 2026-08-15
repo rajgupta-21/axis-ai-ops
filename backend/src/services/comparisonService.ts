@@ -1,4 +1,5 @@
-import { ComparisonResult } from "@/domain/comparison";
+import { ComparisonResult, PlaybookImpactContext } from "@/domain/comparison";
+import { ParsedPlaybook } from "@/domain/playbook";
 import { ReleaseInformation } from "@/domain/release";
 import { ServerSnapshot } from "@/domain/server";
 import { compareVersions } from "@/lib/version";
@@ -90,5 +91,115 @@ export function compareServerToRelease(
     configurationChanges,
     serverDependencies,
     riskFactors,
+  };
+}
+
+/**
+ * Deterministic comparison for a playbook-driven analysis. Correlates what
+ * an uploaded Ansible playbook declares it would do against the server's
+ * current state — the playbook is never executed; this only compares its
+ * declared intent to facts already collected from the server.
+ */
+export function compareServerToPlaybook(
+  snapshot: ServerSnapshot,
+  playbook: ParsedPlaybook,
+  releaseByPackage: Map<string, ReleaseInformation>
+): ComparisonResult {
+  const riskFactors: string[] = [];
+  const serverDependencies: string[] = [];
+
+  const targetedPackages = playbook.packageChanges.map((change) => {
+    const installed = snapshot.software.find(
+      (s) => s.name.toLowerCase() === change.name.toLowerCase()
+    );
+    const release = releaseByPackage.get(change.name.toLowerCase());
+    const targetVersion = change.version ?? release?.latestVersion;
+    const versionGap =
+      installed && targetVersion ? compareVersions(installed.version, targetVersion) : undefined;
+
+    if (installed && targetVersion) {
+      serverDependencies.push(change.name);
+      if (versionGap && !versionGap.insufficientData && versionGap.major + versionGap.minor + versionGap.patch < 0) {
+        riskFactors.push(
+          `Playbook targets ${change.name} ${targetVersion}, which is older than the currently installed ${installed.version}`
+        );
+      }
+    } else if (!installed) {
+      riskFactors.push(`Playbook targets "${change.name}", which is not currently installed on this server`);
+    }
+
+    return {
+      name: change.name,
+      installedVersion: installed?.version,
+      targetVersion,
+      versionGap,
+    };
+  });
+
+  const serviceChanges = playbook.serviceChanges.map((change) => {
+    const current = snapshot.services.find((s) => s.name.toLowerCase() === change.name.toLowerCase());
+    const currentlyRunning = current ? current.status === "running" : undefined;
+    if (currentlyRunning && (change.state === "stopped" || change.enabled === false)) {
+      riskFactors.push(`Playbook would stop or disable "${change.name}", which is currently running`);
+    }
+    return { ...change, currentlyRunning };
+  });
+
+  const portChanges = playbook.portChanges.map((change) => {
+    const currentlyOpen = snapshot.configuration.ports.includes(change.port);
+    if (!currentlyOpen && change.state && !/deny|closed|absent/i.test(change.state)) {
+      riskFactors.push(`Playbook would open port ${change.port}, which is not currently open on this server`);
+    }
+    return { ...change, currentlyOpen };
+  });
+
+  if (playbook.configChanges.length > 0) {
+    riskFactors.push(`Playbook modifies ${playbook.configChanges.length} configuration file(s)`);
+  }
+
+  if (playbook.opaqueTasks.length > 0) {
+    riskFactors.push(
+      `Playbook contains ${playbook.opaqueTasks.length} raw command/shell task(s) whose effect cannot be statically determined — Insufficient data`
+    );
+  }
+
+  if (snapshot.cpu.usagePercent >= CPU_HIGH_THRESHOLD) {
+    riskFactors.push(`High CPU utilization (${snapshot.cpu.usagePercent}%)`);
+  }
+  if (snapshot.memory.usedPercent >= MEMORY_HIGH_THRESHOLD) {
+    riskFactors.push(`High memory utilization (${snapshot.memory.usedPercent}%)`);
+  }
+  if (snapshot.disk.usedPercent >= DISK_HIGH_THRESHOLD) {
+    riskFactors.push(`High disk utilization (${snapshot.disk.usedPercent}%)`);
+  }
+
+  const playbookContext: PlaybookImpactContext = {
+    targetedPackages,
+    serviceChanges,
+    configChanges: playbook.configChanges,
+    portChanges,
+    opaqueTasks: playbook.opaqueTasks,
+    warnings: playbook.warnings,
+  };
+
+  const firstResolved = targetedPackages.find((p) => p.versionGap && !p.versionGap.insufficientData);
+  const anySecurityChanges = Array.from(releaseByPackage.values()).some((r) => r.securityChanges.length > 0);
+
+  return {
+    component: targetedPackages.map((p) => p.name).join(", ") || "Ansible Playbook",
+    currentVersion: firstResolved?.installedVersion ?? "Insufficient data",
+    latestVersion: firstResolved?.targetVersion ?? "Insufficient data",
+    versionGap: firstResolved?.versionGap ?? {
+      major: 0,
+      minor: 0,
+      patch: 0,
+      description: "Insufficient data",
+      insufficientData: true,
+    },
+    securityChanges: anySecurityChanges,
+    configurationChanges: playbook.configChanges.length > 0,
+    serverDependencies,
+    riskFactors,
+    playbook: playbookContext,
   };
 }

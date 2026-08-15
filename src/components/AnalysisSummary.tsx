@@ -1,7 +1,7 @@
 import { AnalysisRecord } from "@/domain/analysis";
 import { RiskBadge } from "./RiskBadge";
 import { formatDateTime } from "@/lib/format";
-import { GaugeIcon, VersionIcon } from "./icons";
+import { DocumentIcon, GaugeIcon, VersionIcon } from "./icons";
 
 const IMPACT_BORDER: Record<string, string> = {
   LOW: "border-l-emerald-400",
@@ -28,6 +28,12 @@ export function AnalysisSummary({ record }: { record: AnalysisRecord }) {
               {record.hostname} · {record.component}
             </h1>
             <p className="mt-1 text-sm text-slate-500">Generated {formatDateTime(record.createdAt)}</p>
+            {record.source === "PLAYBOOK" && (
+              <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">
+                <DocumentIcon className="h-3.5 w-3.5" />
+                Source: Uploaded Ansible Playbook
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">

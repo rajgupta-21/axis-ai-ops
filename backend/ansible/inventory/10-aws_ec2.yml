@@ -1,0 +1,94 @@
+# Dynamic EC2 inventory — ansible discovers instances by querying AWS, so new
+# instances appear in the dashboard without anyone editing a file.
+#
+# The backend only ever reads this through `ansible-inventory --list` and runs
+# read-only fact modules against the hosts it finds. Nothing here can modify an
+# instance.
+#
+# Requires on the control node: the amazon.aws collection, boto3, and AWS
+# credentials (an IAM instance role with ec2:DescribeInstances is the right way
+# — no access keys on disk). See bootstrap-control-node.sh.
+plugin: amazon.aws.aws_ec2
+
+regions:
+  - eu-north-1
+
+# AWS is the source of truth for fleet membership: an instance is managed by this
+# system if, and only if, it carries Ansible=true. Launching an instance with that
+# tag adds it to the dashboard, and removing the tag takes it out — neither needs
+# an inventory edit or a backend change.
+filters:
+  tag:Ansible: "true"
+  # Stopped and terminated instances cannot be reached, so including them would
+  # only produce UNREACHABLE rows. Stopped instances still appear in the UI via
+  # the persisted server row and their last snapshot.
+  instance-state-name:
+    - running
+
+# Name the host after its Name tag rather than the EC2 private DNS name. The
+# backend slugifies the inventory hostname into the server id that appears in
+# the URL (/servers/<id>), so a tag-based name gives stable, readable URLs
+# instead of ip-172-31-1-213. Instances with no Name tag fall back to their
+# instance id so they are never silently dropped.
+hostnames:
+  - tag:Name
+  - instance-id
+
+compose:
+  # The control node reaches the fleet over the VPC, not the public internet.
+  ansible_host: private_ip_address
+
+  # Amazon Linux and most AWS-provided images use ec2-user. Override per host
+  # with a `AnsibleUser` tag when an image differs (e.g. ubuntu).
+  ansible_user: tags.AnsibleUser | default('ec2-user')
+
+  # Resolve each instance's key by its EC2 keypair name, matching the convention
+  # of storing <keypair>.pem in the control node's home directory. An instance
+  # launched with the "nginx" keypair therefore uses ~/nginx.pem automatically,
+  # with no inventory edit.
+  ansible_ssh_private_key_file: "'/home/ec2-user/' + key_name + '.pem'"
+
+  ansible_python_interpreter: "'auto_silent'"
+
+  # Surfaced to the backend so a server's status comes from EC2 rather than being
+  # reported as "unknown". Named with an ias_ prefix because it is this
+  # application's own hostvar, not something ansible interprets.
+  ias_instance_id: instance_id
+  ias_state: state.name
+
+# --- Connecting over SSM instead of SSH (optional) ---------------------------
+#
+# Everything above concerns *discovery*. The transport is separate, and this file
+# leaves it on SSH deliberately.
+#
+# To connect through Session Manager instead — no port 22, no key distribution —
+# uncomment the two lines below. Prerequisites, all of which must be in place
+# first or every host goes UNREACHABLE:
+#
+#   1. community.aws collection on the control node (aws_ssm lives there, not in
+#      amazon.aws).
+#   2. session-manager-plugin installed on the control node.
+#   3. An S3 bucket in this region: the aws_ssm connection plugin stages file
+#      transfers through S3, and without it nothing runs.
+#   4. The SsmRunCommandAndSessions and SsmFileTransferBucket statements from
+#      ../iam/control-node-policy.json attached to this instance's role.
+#
+#   ansible_connection: "'aws_ssm'"
+#   ansible_aws_ssm_bucket_name: "'CHANGE-ME-ansible-ssm-transfer'"
+#
+# Switch only after `ansible all -m ping` passes over SSH, so that a failure
+# afterwards is unambiguously the transport and not discovery.
+
+# Group by tag and platform so hosts can be targeted in useful sets later.
+keyed_groups:
+  - key: tags.Role
+    prefix: role
+  - key: placement.availability_zone
+    prefix: az
+
+# Cache DescribeInstances briefly. The dashboard reads the inventory on every
+# request, and without this each page view is another AWS API call.
+cache: true
+cache_plugin: jsonfile
+cache_connection: /home/ec2-user/.ansible/tmp/ec2_inventory_cache
+cache_timeout: 300

@@ -14,16 +14,25 @@ export default async function ReportsPage() {
   return (
     <PageContainer>
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white">
-            <DocumentIcon className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Reports</h1>
-            <p className="mt-0.5 text-sm text-slate-500">
-              Every PDF report ever generated from an impact analysis, most recent first.
-            </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white">
+              <DocumentIcon className="h-5 w-5" />
+            </span>
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">Reports</h1>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Every PDF report ever generated from an impact analysis, most recent first.
+              </p>
+            </div>
           </div>
+          <a
+            href={`${getApiBaseUrl()}/api/reports/combined`}
+            className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+          >
+            <DownloadIcon className="h-4 w-4" />
+            Download combined report (all servers)
+          </a>
         </div>
 
         {reports.length === 0 ? (

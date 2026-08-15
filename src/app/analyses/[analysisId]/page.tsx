@@ -4,14 +4,18 @@ import { AnalysisRecord } from "@/domain/analysis";
 import { AnalysisSummary } from "@/components/AnalysisSummary";
 import { AnalysisWorkflow } from "@/components/AnalysisWorkflow";
 import { DownloadReportButton } from "@/components/DownloadReportButton";
+import { PlaybookChangeSummary } from "@/components/PlaybookChangeSummary";
+import { ReasoningGraph } from "@/components/ReasoningGraph";
 import { formatDateTime } from "@/lib/format";
 import { PageContainer } from "@/components/PageContainer";
 import {
   ChecklistIcon,
   ClockIcon,
   ConfigIcon,
+  DocumentIcon,
   FlagIcon,
   GaugeIcon,
+  NetworkIcon,
   PuzzleIcon,
   RollbackIcon,
   ShieldIcon,
@@ -42,6 +46,7 @@ export default async function AnalysisPage({
 
   const { analysis, comparison, release } = record;
   const upToDate = comparison.currentVersion === comparison.latestVersion;
+  const offset = (comparison.playbook ? 1 : 0) + 1;
 
   return (
     <PageContainer>
@@ -52,7 +57,21 @@ export default async function AnalysisPage({
         <p className="text-sm leading-relaxed text-slate-700">{analysis.executiveSummary}</p>
       </Section>
 
-      <Section number={2} icon={VersionIcon} title="Version Comparison">
+      <Section number={2} icon={NetworkIcon} title="Agent Reasoning Trace">
+        <p className="mb-3 text-sm text-slate-500">
+          How the LangGraph agent produced the analysis below — context engineering, retrieval, drafting, and
+          self-critique, in execution order.
+        </p>
+        <ReasoningGraph trace={record.reasoningTrace} />
+      </Section>
+
+      {comparison.playbook && (
+        <Section number={3} icon={DocumentIcon} title="Uploaded Playbook — Declared Changes">
+          <PlaybookChangeSummary playbook={comparison.playbook} />
+        </Section>
+      )}
+
+      <Section number={2 + offset} icon={VersionIcon} title="Version Comparison">
         <div className="flex flex-wrap items-center gap-3">
           <span className="rounded-md bg-slate-100 px-3 py-1.5 font-mono text-sm text-slate-700">
             {comparison.currentVersion}
@@ -75,36 +94,36 @@ export default async function AnalysisPage({
         </dl>
       </Section>
 
-      <Section number={3} icon={ConfigIcon} title="Server Configuration Impact">
+      <Section number={3 + offset} icon={ConfigIcon} title="Server Configuration Impact">
         <BulletBlock title="Server Dependencies" items={comparison.serverDependencies} empty="None detected" />
         <BulletBlock title="Risk Factors" items={comparison.riskFactors} empty="No elevated risk factors identified" tone="amber" />
       </Section>
 
-      <Section number={4} icon={ShieldIcon} title="Security Impact" tone={comparison.securityChanges ? "red" : "neutral"}>
+      <Section number={4 + offset} icon={ShieldIcon} title="Security Impact" tone={comparison.securityChanges ? "red" : "neutral"}>
         <BulletBlock items={analysis.securityImpact} tone={comparison.securityChanges ? "red" : "neutral"} />
       </Section>
 
-      <Section number={5} icon={PuzzleIcon} title="Compatibility Impact">
+      <Section number={5 + offset} icon={PuzzleIcon} title="Compatibility Impact">
         <BulletBlock items={analysis.compatibilityImpact} />
       </Section>
 
-      <Section number={6} icon={ClockIcon} title="Operational Risk">
+      <Section number={6 + offset} icon={ClockIcon} title="Operational Risk">
         <BulletBlock items={analysis.operationalRisk} tone="amber" />
       </Section>
 
-      <Section number={7} icon={GaugeIcon} title="Performance Impact">
+      <Section number={7 + offset} icon={GaugeIcon} title="Performance Impact">
         <BulletBlock items={analysis.performanceImpact} />
       </Section>
 
-      <Section number={8} icon={FlagIcon} title="Recommended Actions">
+      <Section number={8 + offset} icon={FlagIcon} title="Recommended Actions">
         <BulletBlock items={analysis.recommendedActions} tone="indigo" />
       </Section>
 
-      <Section number={9} icon={ChecklistIcon} title="Pre-Upgrade Checklist">
+      <Section number={9 + offset} icon={ChecklistIcon} title="Pre-Upgrade Checklist">
         <BulletBlock items={analysis.preUpgradeChecks} tone="indigo" />
       </Section>
 
-      <Section number={10} icon={RollbackIcon} title="Rollback Considerations">
+      <Section number={10 + offset} icon={RollbackIcon} title="Rollback Considerations">
         <BulletBlock items={analysis.rollbackConsiderations} />
       </Section>
 

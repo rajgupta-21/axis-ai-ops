@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { use, useState } from "react";
 import { ServerDetails } from "@/domain/server";
 import { AnalysisRecord } from "@/domain/analysis";
 import { SoftwareVersionInfo } from "@/domain/software";
@@ -16,17 +16,50 @@ import { ConfigurationPanel } from "./ConfigurationPanel";
 import { RecentAnalysesTable } from "./RecentAnalysesTable";
 import { AnalysisTimeline } from "./AnalysisTimeline";
 import { SoftwareSummaryCard, ServicesSummaryCard, ConfigurationSummaryCard } from "./ServerSummaryCards";
+import { AsyncBoundary } from "./AsyncBoundary";
+import { SkeletonCard, SoftwareLoading } from "./Skeletons";
 
 const TABS = ["Overview", "Software", "Services", "Configuration", "Analysis", "History"] as const;
 type Tab = (typeof TABS)[number];
 
+/**
+ * Resolves the streamed software list. Rendered only inside an AsyncBoundary, so
+ * the pending and failed states are handled by the boundary rather than here.
+ */
+function SoftwareSummarySection({
+  promise,
+  onViewAll,
+}: {
+  promise: Promise<SoftwareVersionInfo[]>;
+  onViewAll: () => void;
+}) {
+  return <SoftwareSummaryCard software={use(promise)} onViewAll={onViewAll} />;
+}
+
+function SoftwareTableSection({
+  serverId,
+  promise,
+  readOnly,
+}: {
+  serverId: string;
+  promise: Promise<SoftwareVersionInfo[]>;
+  readOnly?: boolean;
+}) {
+  return <SoftwareTable serverId={serverId} software={use(promise)} readOnly={readOnly} />;
+}
+
 export function ServerDetailTabs({
   server,
-  software,
+  softwarePromise,
   analyses,
 }: {
   server: ServerDetails;
-  software: SoftwareVersionInfo[];
+  /**
+   * Unresolved on purpose. Release lookups make this the slowest data on the
+   * page by minutes on a cold cache, so it streams in separately instead of
+   * holding up the rest of the render.
+   */
+  softwarePromise: Promise<SoftwareVersionInfo[]>;
   analyses: AnalysisRecord[];
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
@@ -92,7 +125,12 @@ export function ServerDetailTabs({
             </div>
 
             <div className="grid gap-4 lg:grid-cols-3">
-              <SoftwareSummaryCard software={software} onViewAll={() => setActiveTab("Software")} />
+              <AsyncBoundary fallback={<SkeletonCard />}>
+                <SoftwareSummarySection
+                  promise={softwarePromise}
+                  onViewAll={() => setActiveTab("Software")}
+                />
+              </AsyncBoundary>
               {snapshot && (
                 <ServicesSummaryCard services={snapshot.services} onViewAll={() => setActiveTab("Services")} />
               )}
@@ -114,7 +152,9 @@ export function ServerDetailTabs({
               Reference view of installed software and discovered versions. Use the Analysis tab to run or
               re-run an impact analysis.
             </p>
-            <SoftwareTable serverId={server.id} software={software} readOnly />
+            <AsyncBoundary fallback={<SoftwareLoading />}>
+              <SoftwareTableSection serverId={server.id} promise={softwarePromise} readOnly />
+            </AsyncBoundary>
           </div>
         )}
 
@@ -128,7 +168,9 @@ export function ServerDetailTabs({
               Select a software component and click Analyze to run the full impact analysis workflow:
               collect snapshot, check latest release, compare, and run Claude Sonnet 5 through Bedrock.
             </p>
-            <SoftwareTable serverId={server.id} software={software} />
+            <AsyncBoundary fallback={<SoftwareLoading />}>
+              <SoftwareTableSection serverId={server.id} promise={softwarePromise} />
+            </AsyncBoundary>
           </div>
         )}
 

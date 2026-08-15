@@ -1,0 +1,54 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DynamicInventoryDiscovery",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceStatus",
+        "ec2:DescribeRegions",
+        "ec2:DescribeTags",
+        "ec2:DescribeAvailabilityZones"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SsmManagedNodeVisibility",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeInstanceInformation",
+        "ssm:GetConnectionStatus"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SsmRunCommandAndSessions",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:SendCommand",
+        "ssm:GetCommandInvocation",
+        "ssm:ListCommandInvocations",
+        "ssm:StartSession",
+        "ssm:ResumeSession",
+        "ssm:TerminateSession",
+        "ssm:DescribeSessions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SsmFileTransferBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::CHANGE-ME-ansible-ssm-transfer",
+        "arn:aws:s3:::CHANGE-ME-ansible-ssm-transfer/*"
+      ]
+    }
+  ]
+}

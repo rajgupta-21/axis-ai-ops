@@ -1,9 +1,10 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { AppError, ErrorCodes } from "@/lib/errors";
-import { getAnalysisById } from "@/repositories/analysisRepository";
+import { getAnalysisById, listLatestAnalysisPerServer } from "@/repositories/analysisRepository";
 import { createReport, getReportByAnalysisId, nextReportNumber } from "@/repositories/reportRepository";
 import { buildAnalysisReportPdf } from "./pdf/buildAnalysisReportPdf";
+import { buildCombinedReportPdf } from "./pdf/buildCombinedReportPdf";
 
 const REPORTS_DIR = path.join(process.cwd(), "generated-reports");
 
@@ -53,4 +54,23 @@ export async function getOrGenerateReport(
   await createReport(analysisId, reportNumber, filePath);
 
   return { buffer, reportNumber };
+}
+
+/**
+ * Builds a combined PDF across the latest analysis for every server.
+ * Generated fresh on every request — not persisted, since it is a
+ * point-in-time snapshot across servers rather than a single analysis.
+ */
+export async function generateCombinedReport(): Promise<Buffer> {
+  const records = await listLatestAnalysisPerServer();
+  try {
+    return await buildCombinedReportPdf(records);
+  } catch (error) {
+    console.error("Combined PDF generation failed:", error);
+    throw new AppError(
+      ErrorCodes.REPORT_FAILED,
+      "The combined report could not be generated.",
+      502
+    );
+  }
 }
