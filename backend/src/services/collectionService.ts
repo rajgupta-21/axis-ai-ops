@@ -9,6 +9,7 @@ import {
 } from "@/repositories/serverRepository";
 import { AppError, ErrorCodes } from "@/lib/errors";
 import { invalidateServer } from "@/lib/cache";
+import { logger } from "@/lib/logger";
 
 const ansibleAdapter = createAnsibleAdapter();
 
@@ -27,16 +28,30 @@ export async function collectServerData(serverId: string): Promise<ServerSnapsho
 }
 
 export async function collectServerDataWithId(serverId: string): Promise<CollectionResult> {
+  const startedAt = Date.now();
+  logger.info("collection", `Collecting data for server "${serverId}".`, {
+    event: "collection.started",
+    serverId,
+    context: { provider: process.env.ANSIBLE_PROVIDER ?? "simulated" },
+  });
+
   let servers;
   try {
     servers = await ansibleAdapter.getServers();
   } catch (error) {
-    throw toCollectionError(error);
+    throw logCollectionFailure(serverId, startedAt, "inventory", error);
   }
 
   const server = servers.find((s) => s.id === serverId);
   if (!server) {
-    throw new AppError(ErrorCodes.SERVER_NOT_FOUND, `Server not found: ${serverId}`, 404);
+    const error = new AppError(ErrorCodes.SERVER_NOT_FOUND, `Server not found: ${serverId}`, 404);
+    logger.warn("collection", error.message, {
+      event: "collection.server_not_found",
+      serverId,
+      durationMs: Date.now() - startedAt,
+      context: { knownServers: servers.length },
+    });
+    throw error;
   }
 
   await upsertServer(server);
@@ -45,7 +60,7 @@ export async function collectServerDataWithId(serverId: string): Promise<Collect
   try {
     snapshot = await ansibleAdapter.collectServerData(serverId);
   } catch (error) {
-    throw toCollectionError(error);
+    throw logCollectionFailure(serverId, startedAt, "facts", error);
   }
 
   const snapshotId = await createSnapshot(snapshot);
@@ -61,7 +76,43 @@ export async function collectServerDataWithId(serverId: string): Promise<Collect
   // "Collect data" would appear to do nothing until the TTL expired.
   await invalidateServer(serverId);
 
+  logger.info("collection", `Collected ${snapshot.software.length} packages from "${server.hostname}".`, {
+    event: "collection.completed",
+    serverId,
+    durationMs: Date.now() - startedAt,
+    context: {
+      hostname: server.hostname,
+      snapshotId,
+      packages: snapshot.software.length,
+      services: snapshot.services.length,
+      os: snapshot.os,
+      status: server.status,
+    },
+  });
+
   return { snapshot, snapshotId };
+}
+
+/**
+ * Records why a collection failed, then returns the error for the caller to
+ * throw.
+ *
+ * `stage` separates the two ways this can go wrong, which have different fixes:
+ * "inventory" means the control node could not even list hosts (Ansible or SSH
+ * is misconfigured), while "facts" means the host was listed but would not
+ * answer (that one machine is down or unreachable). The API response collapses
+ * both into one message, so without this the distinction is lost.
+ */
+function logCollectionFailure(serverId: string, startedAt: number, stage: "inventory" | "facts", error: unknown): AppError {
+  const appError = toCollectionError(error);
+  logger.error("collection", `Collection failed for "${serverId}" at the ${stage} stage.`, {
+    event: `collection.failed`,
+    serverId,
+    durationMs: Date.now() - startedAt,
+    context: { stage, code: appError.code },
+    error,
+  });
+  return appError;
 }
 
 /**

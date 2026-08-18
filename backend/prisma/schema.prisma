@@ -211,3 +211,52 @@ model KnowledgeChunk {
   @@index([component])
   @@map("knowledge_chunks")
 }
+
+enum LogLevel {
+  debug
+  info
+  warn
+  error
+}
+
+/**
+ * Audit trail of everything the system does — one row per notable event.
+ *
+ * Deliberately holds NO foreign keys to `servers` or `impact_analyses`, even
+ * though `serverId` and `analysisId` point at them. An audit record has to
+ * outlive the thing it describes: "analysis X failed, then was deleted" is
+ * exactly the history someone reads this table to reconstruct, and a cascading
+ * delete would erase it at the moment it became interesting. The columns are
+ * plain strings used for filtering and linking, and the UI tolerates a link
+ * that no longer resolves.
+ *
+ * `context` carries event-specific detail as JSON so new event types need no
+ * migration. Never put credentials, tokens, or connection strings in it — this
+ * table is served to the browser unauthenticated, like the rest of this
+ * prototype.
+ */
+model ActivityLog {
+  id         String   @id @default(uuid())
+  timestamp  DateTime @default(now())
+  level      LogLevel
+  category   String
+  event      String
+  message    String
+  requestId  String?  @map("request_id")
+  method     String?
+  path       String?
+  statusCode Int?     @map("status_code")
+  durationMs Int?     @map("duration_ms")
+  serverId   String?  @map("server_id")
+  analysisId String?  @map("analysis_id")
+  context    Json?
+  errorStack String?  @map("error_stack")
+
+  // Every list query in the UI is "most recent first, optionally narrowed by
+  // level or category", so the sort column leads each index.
+  @@index([timestamp])
+  @@index([level, timestamp])
+  @@index([category, timestamp])
+  @@index([requestId])
+  @@map("activity_logs")
+}

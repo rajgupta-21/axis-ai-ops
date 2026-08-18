@@ -32,6 +32,17 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# The example files carry no secrets and are the documentation for what the real
+# ones must contain, so they are the exception. Needed explicitly: ".env*" above
+# would otherwise ignore any newly added example alongside the tracked ones.
+!.env.example
+!.env.docker.example
+
+# Key material and host keys for the SSH hop to the Ansible control node. The
+# directory itself is tracked so the compose bind mounts have somewhere to point.
+/secrets/*
+!/secrets/README.md
+!/secrets/known_hosts
 
 # vercel
 .vercel

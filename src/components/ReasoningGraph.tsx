@@ -7,12 +7,16 @@ const STATUS_STYLES: Record<string, string> = {
   ok: "border-slate-200 bg-white",
   looped: "border-amber-300 bg-amber-50",
   simulated: "border-slate-200 bg-slate-50",
+  // Deliberately the loudest state in this list: it marks an analysis that was
+  // published while the fact-checking pass still objected to it.
+  warning: "border-red-300 bg-red-50",
 };
 
 const STATUS_DOT: Record<string, string> = {
   ok: "bg-emerald-500",
   looped: "bg-amber-500",
   simulated: "bg-slate-400",
+  warning: "bg-red-500",
 };
 
 function durationMs(step: ReasoningTraceStep): number {
@@ -94,6 +98,11 @@ function NodeCard({ step }: { step: ReasoningTraceStep }) {
       {step.status === "looped" && (
         <span className="mt-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
           Triggered revision loop
+        </span>
+      )}
+      {step.status === "warning" && (
+        <span className="mt-2 inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+          Published with unresolved objections
         </span>
       )}
       {hasDetail && (

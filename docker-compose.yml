@@ -1,14 +1,73 @@
-# Redis for the backend's response cache.
+# The whole application: Postgres, Redis, the Express API, and the Next.js UI.
 #
-# Only Redis lives here. PostgreSQL is deliberately left out: this project points
-# DATABASE_URL at a Prisma-managed dev database on its own port, and adding a
-# second Postgres here would leave two plausible databases for one connection
-# string.
+#   cp .env.docker.example .env.docker   # then fill in the API keys
+#   docker compose --env-file .env.docker up -d --build
+#   docker compose --env-file .env.docker logs -f backend
+#   docker compose --env-file .env.docker down     # data survives in the volumes
+#   docker compose --env-file .env.docker down -v  # also DELETE the database
 #
-#   docker compose up -d          start
-#   docker compose logs -f redis  follow
-#   docker compose down           stop (data survives in the named volume)
+# The --env-file flag is required, not optional. Two different mechanisms are at
+# play and only one of them is covered by the `env_file:` keys below:
+#
+#   env_file:      puts variables INSIDE a container. Handled per service.
+#   ${...} here    is interpolation of this file, resolved BEFORE any container
+#                  exists — and Compose only reads it from the shell or from a
+#                  root `.env`, never from a service's env_file.
+#
+# This project's root `.env` belongs to the Next.js dev server, so it is not that
+# source. Without the flag, every ${...} below silently falls back to its
+# default: the wrong host port, the wrong database name, and — until the `:?`
+# guards below — a bind mount pointing at a key that is not there.
+#
+# Prefer an alias over remembering it:
+#   alias iac='docker compose --env-file .env.docker'
+#
+# UI on http://localhost:3000, API on http://localhost:4000.
+#
+# This supersedes the earlier Redis-only compose file, which deliberately left
+# Postgres out because DATABASE_URL pointed at a Prisma-managed dev database on
+# its own port. That reasoning still holds for `npm run dev` — running both at
+# once would leave two plausible databases for one connection string. Keep them
+# separate: use `npx prisma dev` for local development, and this file when the
+# stack runs in containers, not both against the same DATABASE_URL.
+#
+# What is NOT in here, and cannot be: the Ansible control node and the managed
+# fleet are EC2 instances. This stack reaches them outward over SSH, which is
+# why the backend image ships an ssh client and mounts a key.
+
+name: impact-analysis
+
 services:
+  # --------------------------------------------------------------- PostgreSQL
+  postgres:
+    # pgvector/pgvector, not the stock postgres image: the knowledge base column
+    # is a `vector(1024)` and the migration runs CREATE EXTENSION vector, which
+    # fails on an image where the extension is not available.
+    image: pgvector/pgvector:pg17
+    container_name: ias-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-impact_analysis}
+    ports:
+      # Published on 5433 so it cannot collide with a Postgres already installed
+      # on the host, and bound to loopback — the database holds collected server
+      # inventory and should not be reachable from the network.
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # Both -U and -d are required: without them pg_isready checks a database
+      # named after the default user, reports "healthy" too early, and the
+      # migration then fails against a database that is not yet accepting it.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-impact_analysis}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # -------------------------------------------------------------------- Redis
   redis:
     image: redis:7-alpine
     container_name: ias-redis
@@ -16,12 +75,10 @@ services:
     ports:
       # Host port 6380, not 6379: this machine already runs a Homebrew Redis on
       # the default port, and taking it would break whatever else uses it. The
-      # container still listens on 6379 internally, so REDIS_URL is the only
-      # place the offset appears.
-      #
-      # Bound to loopback only. The cache holds collected server inventory, so it
-      # should not be reachable from the network on a developer machine.
-      - "127.0.0.1:6380:6379"
+      # container still listens on 6379 internally, so the offset appears only
+      # in the host-facing URL — inside the network the backend uses
+      # redis://redis:6379.
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
     command:
       - redis-server
       - --appendonly
@@ -41,5 +98,144 @@ services:
       retries: 5
       start_period: 5s
 
+  # -------------------------------------------------- Migrations (runs once)
+  migrate:
+    # Built from the build stage, which still has the Prisma CLI — it is a
+    # devDependency and is deliberately absent from the lean runtime image.
+    build:
+      context: ./backend
+      target: build
+    container_name: ias-migrate
+    # A separate one-shot service rather than part of the backend's entrypoint,
+    # so scaling the API to more than one replica cannot have several containers
+    # racing to migrate the same database on startup.
+    command: npx prisma migrate deploy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-impact_analysis}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # ------------------------------------------------------------ Express API
+  backend:
+    build:
+      context: ./backend
+    container_name: ias-backend
+    restart: unless-stopped
+    env_file:
+      # Every credential lives here — AWS, Groq, Tavily, Pinecone. Not baked
+      # into the image, so the same image runs in any environment.
+      - .env.docker
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # Service names, not localhost: inside a container localhost is that
+      # container. These override anything in .env.docker, which is why the
+      # example file leaves them out.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-impact_analysis}
+      REDIS_URL: redis://redis:6379
+    ports:
+      # Bound to all interfaces, unlike the datastores: the browser calls this
+      # API directly (the UI is a pure REST client), so it has to be reachable
+      # from wherever the browser runs.
+      - "${BACKEND_PORT:-4000}:4000"
+    volumes:
+      # The SSH key for the hop to the Ansible control node. Read-only, and
+      # copied to a private path with correct permissions by the entrypoint —
+      # ssh rejects a key that is group- or world-readable.
+      #
+      # `:?` rather than a default on purpose. A bind mount whose host path does
+      # not exist is created by Docker as an empty *directory*, so a fallback
+      # here would produce a container that starts cleanly and then fails every
+      # collection with an unreadable key. Erroring before anything starts, with
+      # the reason, is the better failure.
+      - ${ANSIBLE_SSH_KEY_HOST_PATH:?not set — copy .env.docker.example to .env.docker and run compose with --env-file .env.docker}:/run/secrets/ansible-key.pem:ro
+      # Known host keys for that hop. Host-key verification stays on, so without
+      # this the first connection fails — see ANSIBLE_SSH_KEYSCAN in
+      # .env.docker.example for the trust-on-first-use alternative.
+      - ${SSH_KNOWN_HOSTS_HOST_PATH:?not set — see the --env-file note at the top of this file}:/run/secrets/known_hosts:ro
+      # Generated PDFs. A named volume so reports survive a container rebuild —
+      # they are immutable records referenced by rows in the database, and
+      # losing them would leave the reports page pointing at nothing.
+      - reports-data:/app/generated-reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # node rather than curl: the runtime image has no HTTP client installed,
+      # and adding one only for a healthcheck is a needless attack surface.
+      # /ready, not /health: /health only proves the process is up, and would
+      # report healthy while the database was unreachable and every request was
+      # failing. /ready checks the database too.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # -------------------------------------------------------------- Next.js UI
+  frontend:
+    build:
+      context: .
+      args:
+        # Baked into the client bundle at build time, so it must be the URL the
+        # browser uses. Change it and the image needs rebuilding.
+        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:4000}
+    container_name: ias-frontend
+    restart: unless-stopped
+    environment:
+      # Read at runtime by Server Components, which fetch over the Docker
+      # network rather than through the published port. Without this the
+      # server-rendered pages would try their own localhost and get nothing.
+      INTERNAL_API_BASE_URL: http://backend:4000
+      NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:4000}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        # Waits for /health, so the first page load is not the "API unreachable"
+        # notice while the API is still starting.
+        condition: service_healthy
+
+  # ------------------------------------------------- Database browser (opt-in)
+  adminer:
+    # Behind a profile, so `docker compose up` does not start it. Bring it up
+    # deliberately:
+    #
+    #   docker compose --profile tools up -d adminer
+    #
+    # Then http://localhost:8080 — System "PostgreSQL", Server "postgres", and
+    # the POSTGRES_* credentials from .env.docker.
+    #
+    # This is the containerised counterpart to `npm run db:studio`, which runs
+    # on the host against DATABASE_URL and is the nicer tool for normal use.
+    # Adminer earns its place for the one thing Studio cannot do: raw SQL,
+    # including reading the `embedding` column, which Prisma Client cannot
+    # represent (Unsupported("vector(1024)")) and so Studio never displays.
+    profiles: ["tools"]
+    image: adminer:5
+    container_name: ias-adminer
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      # Loopback only — it is an unauthenticated gateway to the database from
+      # the moment it starts, so it must not be reachable from the network.
+      - "127.0.0.1:${ADMINER_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
+  postgres-data:
   redis-data:
+  reports-data:

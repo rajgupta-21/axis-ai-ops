@@ -1,4 +1,5 @@
 import Redis from "ioredis";
+import { logger } from "./logger";
 
 /**
  * Redis-backed response cache.
@@ -52,7 +53,9 @@ function getClient(): Redis | null {
 
   if (process.env.CACHE_ENABLED === "false") {
     clientUnavailable = true;
-    console.info("[cache] disabled by CACHE_ENABLED=false; every request will be computed fresh.");
+    logger.info("cache", "Cache disabled by CACHE_ENABLED=false; every request is computed fresh.", {
+      event: "cache.disabled",
+    });
     return null;
   }
 
@@ -68,16 +71,17 @@ function getClient(): Redis | null {
     // per reconnect attempt and drowns out everything else in the log.
     if (!clientUnavailable) {
       clientUnavailable = true;
-      console.warn(
-        `[cache] Redis unavailable (${error.code ?? error.message}); serving uncached. ` +
-          `Start it with "docker compose up -d".`
+      logger.warn(
+        "cache",
+        `Redis unavailable (${error.code ?? error.message}); serving uncached. Start it with "docker compose up -d".`,
+        { event: "cache.unavailable", context: { code: error.code ?? null } }
       );
     }
   });
 
   client.on("ready", () => {
     clientUnavailable = false;
-    console.info("[cache] connected to Redis.");
+    logger.info("cache", "Connected to Redis.", { event: "cache.connected" });
   });
 
   client.connect().catch(() => {
@@ -98,7 +102,23 @@ function namespaced(key: string): string {
  * A rejected `compute` is never cached — an unreachable host must be retried on
  * the next request rather than remembered as a failure for the whole TTL.
  */
-export async function cached<T>(key: string, ttlSeconds: number, compute: () => Promise<T>): Promise<T> {
+export async function cached<T>(
+  key: string,
+  ttlSeconds: number,
+  compute: () => Promise<T>,
+  options?: {
+    /**
+     * Decides whether a freshly computed value is worth storing. Defaults to
+     * always. Used to keep *degraded* results out of the cache: when the Ansible
+     * control node is unreachable the server list falls back to the last known
+     * state from Postgres, and caching that would keep serving the stale fleet
+     * for the full TTL after SSH recovered — the app would look broken for a
+     * minute after it was fixed. Recomputing a degraded response is cheap
+     * precisely because the expensive remote call is the thing that failed.
+     */
+    shouldCache?: (value: T) => boolean;
+  }
+): Promise<T> {
   const redis = getClient();
   if (!redis) return compute();
 
@@ -110,6 +130,8 @@ export async function cached<T>(key: string, ttlSeconds: number, compute: () => 
   }
 
   const value = await compute();
+
+  if (options?.shouldCache && !options.shouldCache(value)) return value;
 
   try {
     await redis.set(namespaced(key), JSON.stringify(value), "EX", ttlSeconds);
@@ -140,10 +162,11 @@ export async function invalidate(keyPrefix: string): Promise<void> {
       if (keys.length > 0) await redis.del(...keys);
     } while (cursor !== "0");
   } catch (error) {
-    console.warn(
-      `[cache] could not invalidate "${match}":`,
-      error instanceof Error ? error.message : error
-    );
+    logger.warn("cache", `Could not invalidate cache keys matching "${match}".`, {
+      event: "cache.invalidate_failed",
+      context: { match },
+      error,
+    });
   }
 }
 

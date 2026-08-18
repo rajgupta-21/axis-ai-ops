@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { ok, fail, handleApiError } from "@/lib/apiResponse";
+import { ok, okWithWarning, fail, handleApiError } from "@/lib/apiResponse";
 import { listServers, getServerDetails } from "@/services/serverService";
 import { collectServerData } from "@/services/collectionService";
 import { listServerSoftware } from "@/services/softwareService";
@@ -12,8 +12,9 @@ export const serversRouter = Router();
 
 serversRouter.get("/", async (_req, res) => {
   try {
-    const servers = await listServers();
-    ok(res, servers);
+    const { servers, warning } = await listServers();
+    if (warning) okWithWarning(res, servers, warning);
+    else ok(res, servers);
   } catch (error) {
     handleApiError(res, error);
   }
@@ -21,8 +22,9 @@ serversRouter.get("/", async (_req, res) => {
 
 serversRouter.get("/:id", async (req, res) => {
   try {
-    const details = await getServerDetails(req.params.id);
-    ok(res, details);
+    const { details, warning } = await getServerDetails(req.params.id);
+    if (warning) okWithWarning(res, details, warning);
+    else ok(res, details);
   } catch (error) {
     handleApiError(res, error);
   }

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { apiFetch, ApiError } from "@/lib/apiClient";
+import { apiFetchSafe } from "@/lib/apiClient";
 import { AnalysisRecord } from "@/domain/analysis";
 import { AnalysisSummary } from "@/components/AnalysisSummary";
 import { AnalysisWorkflow } from "@/components/AnalysisWorkflow";
@@ -8,6 +8,7 @@ import { PlaybookChangeSummary } from "@/components/PlaybookChangeSummary";
 import { ReasoningGraph } from "@/components/ReasoningGraph";
 import { formatDateTime } from "@/lib/format";
 import { PageContainer } from "@/components/PageContainer";
+import { StatusNotice } from "@/components/StatusNotice";
 import {
   ChecklistIcon,
   ClockIcon,
@@ -34,15 +35,30 @@ export default async function AnalysisPage({
 }) {
   const { analysisId } = await params;
 
-  let record: AnalysisRecord;
-  try {
-    record = await apiFetch<AnalysisRecord>(`/api/analyses/${analysisId}`);
-  } catch (error) {
-    if (error instanceof ApiError && error.code === "ANALYSIS_NOT_FOUND") {
-      notFound();
-    }
-    throw error;
+  const result = await apiFetchSafe<AnalysisRecord>(`/api/analyses/${analysisId}`);
+
+  // A missing analysis is a 404, not an outage — that distinction is worth
+  // keeping. Anything else renders as an explained error page: this whole page
+  // is one record, so there is no partial view to fall back to, but a heading
+  // and a reason still beat a runtime error screen.
+  if (!result.ok) {
+    if (result.error.code === "ANALYSIS_NOT_FOUND") notFound();
+
+    return (
+      <PageContainer>
+        <div className="space-y-4">
+          <h1 className="text-2xl font-semibold text-slate-900">Analysis</h1>
+          <StatusNotice
+            tone="error"
+            title="This analysis could not be loaded"
+            message={result.error.message}
+          />
+        </div>
+      </PageContainer>
+    );
   }
+
+  const record = result.data;
 
   const { analysis, comparison, release } = record;
   const upToDate = comparison.currentVersion === comparison.latestVersion;

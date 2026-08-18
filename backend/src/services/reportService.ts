@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { AppError, ErrorCodes } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 import { getAnalysisById, listLatestAnalysisPerServer } from "@/repositories/analysisRepository";
 import { createReport, getReportByAnalysisId, nextReportNumber } from "@/repositories/reportRepository";
 import { buildAnalysisReportPdf } from "./pdf/buildAnalysisReportPdf";
@@ -40,7 +41,12 @@ export async function getOrGenerateReport(
   try {
     buffer = await buildAnalysisReportPdf(record, reportNumber);
   } catch (error) {
-    console.error("PDF generation failed:", error);
+    logger.error("report", `PDF generation failed for analysis ${record.id}.`, {
+      event: "report.failed",
+      analysisId: record.id,
+      context: { reportNumber },
+      error,
+    });
     throw new AppError(
       ErrorCodes.REPORT_FAILED,
       "The analysis was completed, but the report could not be generated.",
@@ -66,7 +72,11 @@ export async function generateCombinedReport(): Promise<Buffer> {
   try {
     return await buildCombinedReportPdf(records);
   } catch (error) {
-    console.error("Combined PDF generation failed:", error);
+    logger.error("report", "Combined PDF generation failed.", {
+      event: "report.combined_failed",
+      context: { analyses: records.length },
+      error,
+    });
     throw new AppError(
       ErrorCodes.REPORT_FAILED,
       "The combined report could not be generated.",

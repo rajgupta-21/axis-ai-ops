@@ -1,0 +1,26 @@
+# Keeps the build context small and stops host-only state from leaking into an
+# image. node_modules especially: copying the host's would ship darwin-specific
+# binaries into a Linux image.
+node_modules
+.next
+.git
+.gitignore
+
+# Never bake credentials into an image layer — they are supplied at runtime.
+.env
+.env.*
+!.env.example
+*.pem
+
+backend
+specs
+README.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+tsconfig.tsbuildinfo
+npm-debug.log*
+.DS_Store
+.claude
+.agents
+.windsurf

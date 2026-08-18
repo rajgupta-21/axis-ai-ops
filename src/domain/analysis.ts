@@ -27,7 +27,12 @@ export interface ImpactAnalysis {
   rollbackConsiderations: string[];
 }
 
-export type ReasoningTraceNodeStatus = "ok" | "looped" | "simulated";
+/**
+ * "warning" marks a step that completed but produced a result the reader should
+ * not take at face value — currently, finalizing over a reviewer objection the
+ * revision budget could not resolve.
+ */
+export type ReasoningTraceNodeStatus = "ok" | "looped" | "simulated" | "warning";
 
 export interface ReasoningTraceStep {
   node: string;

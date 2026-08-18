@@ -1,0 +1,19 @@
+node_modules
+dist
+.git
+
+# Never bake credentials or key material into an image layer.
+.env
+.env.*
+!.env.example
+*.pem
+
+# Generated at build time by `prisma generate`; a host-generated client would
+# carry the wrong platform's query engine binary.
+src/generated
+
+# Runtime output, not build input.
+generated-reports
+
+npm-debug.log*
+.DS_Store

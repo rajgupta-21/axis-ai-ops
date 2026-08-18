@@ -3,12 +3,20 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { LangChainReasoningModel } from "./reasoningModel";
 
 /**
- * Groq default. A 70B-class instruct model is the right tier here: the agent
- * needs reliable tool-calling for structured output plus enough judgement to
- * fact-check its own draft, and the smaller instant models are noticeably
- * weaker at both. Override with GROQ_MODEL_ID.
+ * Groq default. The agent needs reliable tool-calling for structured output
+ * plus enough judgement to fact-check its own draft, so the largest model Groq
+ * offers is the right tier; the smaller ones are noticeably weaker at both.
+ *
+ * Was llama-3.3-70b-versatile until Groq decommissioned the Llama models —
+ * requesting one now returns a 404 "model_not_found", which surfaces in the UI
+ * as ANALYSIS_FAILED. Verify a replacement against
+ * `GET https://api.groq.com/openai/v1/models` before setting it, and prefer a
+ * model that keeps its chain-of-thought in a separate `reasoning` field: some
+ * (qwen3.6) emit a <think> block inside `content`, which breaks JSON parsing.
+ *
+ * Override with GROQ_MODEL_ID.
  */
-const DEFAULT_MODEL_ID = "llama-3.3-70b-versatile";
+const DEFAULT_MODEL_ID = "openai/gpt-oss-120b";
 
 /**
  * Runs the agent's reasoning on Groq. Added as a working alternative while the

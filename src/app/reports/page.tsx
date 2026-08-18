@@ -1,15 +1,18 @@
 import Link from "next/link";
-import { apiFetch, getApiBaseUrl } from "@/lib/apiClient";
+import { apiFetchSafe, getApiBaseUrl } from "@/lib/apiClient";
 import { ReportListItem } from "@/domain/report";
 import { RiskBadge } from "@/components/RiskBadge";
 import { PageContainer } from "@/components/PageContainer";
+import { StatusNotice } from "@/components/StatusNotice";
 import { formatDateTime } from "@/lib/format";
 import { DocumentIcon, DownloadIcon, InboxIcon } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReportsPage() {
-  const reports = await apiFetch<ReportListItem[]>("/api/reports?limit=200");
+  const result = await apiFetchSafe<ReportListItem[]>("/api/reports?limit=200");
+  const reports = result.ok ? result.data : [];
+  const error = result.ok ? null : result.error.message;
 
   return (
     <PageContainer>
@@ -35,7 +38,9 @@ export default async function ReportsPage() {
           </a>
         </div>
 
-        {reports.length === 0 ? (
+        {error ? (
+          <StatusNotice tone="error" title="Reports are unavailable" message={error} />
+        ) : reports.length === 0 ? (
           <p className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">
             <InboxIcon className="h-4 w-4 text-slate-400" />
             No reports have been generated yet. Download a report from any analysis page to create one.

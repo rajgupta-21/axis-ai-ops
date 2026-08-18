@@ -181,8 +181,17 @@ async function webSearchNode(state: AgentState): Promise<Partial<AgentState>> {
     }
   }
 
+  // Deduplicated against what is already held. Previous runs ingested these
+  // same findings into the knowledge base, so without this the model routinely
+  // saw one passage twice — once retrieved by pgvector, once fresh from the web
+  // — and identical text repeated reads as corroboration when it is a single
+  // source counted twice.
+  const merged = dedupeReferences([...state.retrievedReferences, ...result.references]);
+  const added = merged.length - state.retrievedReferences.length;
+  const duplicates = result.references.length - added;
+
   return {
-    retrievedReferences: [...state.retrievedReferences, ...result.references],
+    retrievedReferences: merged,
     searchCount: state.searchCount + 1,
     searchedQueries: [queryKey(query)],
     trace: [
@@ -193,8 +202,9 @@ async function webSearchNode(state: AgentState): Promise<Partial<AgentState>> {
         startedAt,
         result.error
           ? `Search for "${query}" failed: ${result.error} Proceeding on existing evidence.`
-          : `Agent searched "${query}" and retrieved ${result.references.length} source(s).`,
-        { query, error: result.error ?? null, references: result.references }
+          : `Agent searched "${query}" and retrieved ${result.references.length} source(s)` +
+            (duplicates > 0 ? `, ${duplicates} already held and discarded as duplicates.` : "."),
+        { query, error: result.error ?? null, references: result.references, duplicatesDropped: duplicates }
       ),
     ],
   };
@@ -260,19 +270,70 @@ async function reviseReasoningNode(state: AgentState): Promise<Partial<AgentStat
   };
 }
 
+/**
+ * Validates the draft and applies the two deterministic post-conditions that
+ * the model is not trusted to enforce on itself: confidence must be justified
+ * by the evidence, and an unresolved objection must never leave the graph
+ * silently.
+ *
+ * The second case is the one that mattered. With the revision budget spent, the
+ * router sends the draft here regardless of what the final critique said, so a
+ * result could be persisted — and rendered, and put in a PDF — still carrying
+ * claims the reviewer had just rejected, with the disagreement visible only to
+ * someone who expanded the trace. For a tool whose only product is a judgement
+ * a human will act on, that is the worst available outcome, so the objection is
+ * promoted into the analysis body itself.
+ */
 function finalizeNode(state: AgentState): Partial<AgentState> {
   const startedAt = new Date().toISOString();
   const validated = ImpactAnalysisSchema.parse(state.draft);
+
+  const criticApproved = state.critique?.approved !== false;
+  const unresolved = criticApproved ? [] : state.critique?.issues ?? [];
+
+  const { confidence, reason } = clampConfidence(validated.confidence, state.context!, criticApproved);
+
+  const finalAnalysis: ImpactAnalysis = {
+    ...validated,
+    confidence,
+    // Surfaced in risks specifically because that list reaches every output —
+    // the analysis page, the PDF report — whereas the trace reaches only the
+    // reader who goes looking for it.
+    risks: unresolved.length
+      ? [
+          ...validated.risks,
+          `Unverified content: a fact-checking pass rejected ${unresolved.length} claim(s) in this analysis and the revision budget was exhausted before they were resolved. Treat the following as unconfirmed — ${unresolved.join("; ")}`,
+        ]
+      : validated.risks,
+    reasoning:
+      reason !== null
+        ? [...validated.reasoning, `Confidence was reduced to ${confidence} because ${reason}.`]
+        : validated.reasoning,
+  };
+
+  const summary = unresolved.length
+    ? `Finalized with ${unresolved.length} unresolved reviewer objection(s) after ${state.revisionCount} revision(s); confidence forced to ${confidence} and the objections recorded as risks.`
+    : reason !== null
+      ? `Draft passed schema validation after ${state.revisionCount} revision(s); confidence lowered from ${validated.confidence} to ${confidence} because ${reason}.`
+      : `Draft passed schema validation after ${state.revisionCount} revision(s) and is ready to persist.`;
+
   return {
-    draft: validated,
+    draft: finalAnalysis,
     trace: [
       traceStep(
         "finalize",
         "Finalize validated result",
-        "ok",
+        unresolved.length ? "warning" : "ok",
         startedAt,
-        `Draft passed schema validation after ${state.revisionCount} revision(s) and is ready to persist.`,
-        { revisions: state.revisionCount }
+        summary,
+        {
+          revisions: state.revisionCount,
+          declaredConfidence: validated.confidence,
+          finalConfidence: confidence,
+          confidenceReason: reason,
+          unresolvedIssues: unresolved,
+          tokenUsage: reasoningModel.usage?.snapshot() ?? null,
+        }
       ),
     ],
   };
@@ -281,6 +342,69 @@ function finalizeNode(state: AgentState): Partial<AgentState> {
 /** Normalized so trivial rewording still counts as the same query. */
 function queryKey(query: string): string {
   return query.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Collapses references whose text is effectively identical, keeping the first
+ * occurrence — which is the knowledge-base copy when one exists, since those
+ * are prepended. Compared on normalized text rather than URL: the same release
+ * note is routinely served from several addresses, and the duplication that
+ * misleads the model is textual.
+ */
+function dedupeReferences(references: RetrievedReference[]): RetrievedReference[] {
+  const seen = new Set<string>();
+  const unique: RetrievedReference[] = [];
+
+  for (const reference of references) {
+    const key = reference.chunkText.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 300);
+    if (key.length === 0 || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(reference);
+  }
+
+  return unique;
+}
+
+/**
+ * Confidence the analysis is allowed to claim, given what is provably absent.
+ *
+ * The model previously chose this freely, which let it report HIGH confidence
+ * while the context envelope stated in the same breath that the target version
+ * was unknown. factsMissing is computed deterministically by
+ * buildContextEnvelope, so it is a fact about the evidence rather than an
+ * opinion, and it can bound the claim in code.
+ *
+ * Only ever lowers. A model that is already unsure about well-evidenced input
+ * knows something this rule does not.
+ */
+function clampConfidence(
+  declared: ImpactAnalysis["confidence"],
+  context: ContextEnvelope,
+  criticApproved: boolean
+): { confidence: ImpactAnalysis["confidence"]; reason: string | null } {
+  const order: ImpactAnalysis["confidence"][] = ["LOW", "MEDIUM", "HIGH"];
+  const rank = (value: ImpactAnalysis["confidence"]) => order.indexOf(value);
+
+  let ceiling: ImpactAnalysis["confidence"] = "HIGH";
+  let reason: string | null = null;
+
+  if (context.factsMissing.length >= 3) {
+    ceiling = "LOW";
+    reason = `${context.factsMissing.length} material facts were unavailable`;
+  } else if (context.factsMissing.length > 0) {
+    ceiling = "MEDIUM";
+    reason = `${context.factsMissing.length} material fact(s) were unavailable`;
+  }
+
+  // An unresolved critique outranks the count: claims the reviewer rejected are
+  // still present in the text being published.
+  if (!criticApproved) {
+    ceiling = "LOW";
+    reason = "the fact-checking reviewer's objections were not resolved";
+  }
+
+  if (rank(declared) <= rank(ceiling)) return { confidence: declared, reason: null };
+  return { confidence: ceiling, reason };
 }
 
 function routeAfterAssessment(state: AgentState): "web_search" | "draft_reasoning" {

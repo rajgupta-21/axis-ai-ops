@@ -1,7 +1,7 @@
 {
   "name": "impact-analysis-backend",
   "version": "1.0.0",
-  "description": "Server Version & Patch Impact Analysis — Express API",
+  "description": "Server Version & Patch Impact Analysis \u2014 Express API",
   "private": true,
   "main": "dist/src/server.js",
   "scripts": {
@@ -13,7 +13,10 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
+    "db:studio": "prisma studio",
+    "kb": "tsx scripts/kb.ts",
     "check:llm": "tsx scripts/check-llm.ts",
+    "eval:agent": "tsx scripts/eval-agent.ts",
     "check:bedrock": "tsx scripts/check-bedrock.ts"
   },
   "prisma": {

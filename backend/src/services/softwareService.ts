@@ -38,7 +38,7 @@ export async function listServerSoftware(serverId: string): Promise<SoftwareVers
 }
 
 async function computeServerSoftware(serverId: string): Promise<SoftwareVersionInfo[]> {
-  const details = await getServerDetails(serverId);
+  const { details } = await getServerDetails(serverId);
   const allSoftware = details.snapshot?.software ?? [];
   if (allSoftware.length === 0) return [];
 

@@ -1,6 +1,7 @@
 import { ReleaseInformation } from "@/domain/release";
 import { createEmbeddingAdapter } from "@/adapters/embedding";
 import { upsertKnowledgeChunk } from "@/repositories/knowledgeRepository";
+import { isIngestibleSource } from "@/adapters/bedrock/agent/webSearchTool";
 
 const embeddingAdapter = createEmbeddingAdapter();
 
@@ -26,9 +27,28 @@ export async function ingestWebFindings(
   findings: readonly { chunkText: string; sourceUrl: string | null }[]
 ): Promise<void> {
   const unique = new Map<string, { chunkText: string; sourceUrl: string | null }>();
+  let rejected = 0;
+
   for (const finding of findings) {
     const text = finding.chunkText.trim();
-    if (text.length > 0) unique.set(text, finding);
+    if (text.length === 0) continue;
+
+    // The gate that makes web search safe to persist. Anything from an
+    // unrecognised host still informed the analysis that fetched it — it was in
+    // the prompt — but it does not become permanent, retrievable evidence for
+    // every later analysis of this component.
+    if (!isIngestibleSource(finding.sourceUrl)) {
+      rejected += 1;
+      continue;
+    }
+
+    unique.set(text, finding);
+  }
+
+  if (rejected > 0) {
+    console.info(
+      `[knowledge] ${component}: kept ${unique.size} finding(s), skipped ${rejected} from non-allowlisted sources.`
+    );
   }
 
   await Promise.all(

@@ -17,46 +17,8 @@ export const ImpactAnalysisSchema = z.object({
 
 export type ImpactAnalysisParsed = z.infer<typeof ImpactAnalysisSchema>;
 
-/**
- * Attempts to extract a JSON object from a raw LLM text response, tolerating
- * markdown code fences or leading/trailing prose, then validates it against
- * the required structured output shape. Never repairs by inventing values —
- * only strips surrounding non-JSON text.
- */
-export function parseAndValidateImpactAnalysis(raw: string): ImpactAnalysisParsed {
-  const candidate = extractJsonCandidate(raw);
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(candidate);
-  } catch {
-    throw new Error("Impact analysis response was not valid JSON.");
-  }
-
-  const result = ImpactAnalysisSchema.safeParse(parsed);
-  if (!result.success) {
-    throw new Error(
-      `Impact analysis response failed validation: ${result.error.issues
-        .map((i) => `${i.path.join(".")}: ${i.message}`)
-        .join("; ")}`
-    );
-  }
-
-  return result.data;
-}
-
-function extractJsonCandidate(raw: string): string {
-  const trimmed = raw.trim();
-  const fenceMatch = /```(?:json)?\s*([\s\S]*?)```/i.exec(trimmed);
-  if (fenceMatch) {
-    return fenceMatch[1].trim();
-  }
-
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    return trimmed.slice(firstBrace, lastBrace + 1);
-  }
-
-  return trimmed;
-}
+// Removed: parseAndValidateImpactAnalysis and its extractJsonCandidate helper.
+// Both were unreferenced, and duplicated the JSON-extraction logic that is
+// actually used, in agent/reasoningModel.ts (extractJsonObject). Two copies of
+// a parser that must tolerate exactly the same model quirks is a bug waiting to
+// happen — a fix applied to one would silently miss the other.

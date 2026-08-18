@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetchSafe } from "@/lib/apiClient";
 import { ServerSummary } from "@/domain/server";
 import { AnalysisRecord } from "@/domain/analysis";
 import { ServerTable } from "@/components/ServerTable";
@@ -8,6 +8,7 @@ import { PlaybookAnalysisPanel } from "@/components/PlaybookAnalysisPanel";
 import { RiskBadge } from "@/components/RiskBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PageContainer } from "@/components/PageContainer";
+import { SectionError, StatusNotice } from "@/components/StatusNotice";
 import {
   AlertTriangleIcon,
   DashboardIcon,
@@ -39,10 +40,20 @@ function attentionReasons(server: ServerSummary): string[] {
 }
 
 export default async function DashboardPage() {
-  const [servers, recentAnalyses] = await Promise.all([
-    apiFetch<ServerSummary[]>("/api/servers"),
-    apiFetch<AnalysisRecord[]>("/api/analyses?limit=5"),
+  // Fetched independently and never thrown. The two halves of this page have no
+  // dependency on each other — analysis history comes from Postgres alone and
+  // needs nothing from Ansible — so an unreachable control node must not be
+  // able to blank the charts, and a database problem must not blank the fleet.
+  const [serversResult, analysesResult] = await Promise.all([
+    apiFetchSafe<ServerSummary[]>("/api/servers"),
+    apiFetchSafe<AnalysisRecord[]>("/api/analyses?limit=5"),
   ]);
+
+  const servers = serversResult.ok ? serversResult.data : [];
+  const recentAnalyses = analysesResult.ok ? analysesResult.data : [];
+  const serversError = serversResult.ok ? null : serversResult.error.message;
+  const analysesError = analysesResult.ok ? null : analysesResult.error.message;
+  const staleWarning = serversResult.ok ? serversResult.warning : null;
 
   const healthy = servers.filter((s) => s.status === "healthy").length;
   const warning = servers.filter((s) => s.status === "warning").length;
@@ -75,6 +86,28 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {serversError && (
+        <StatusNotice
+          tone="error"
+          title="Server data is unavailable"
+          message={serversError}
+        />
+      )}
+      {staleWarning && (
+        <StatusNotice
+          tone="warning"
+          title="Showing last known server state"
+          message={staleWarning}
+        />
+      )}
+      {analysesError && !serversError && (
+        <StatusNotice
+          tone="error"
+          title="Analysis history is unavailable"
+          message={analysesError}
+        />
+      )}
+
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <SummaryCard label="Total Servers" value={servers.length} icon={ServerIcon} accent="text-slate-900" iconBg="bg-slate-100" />
         <SummaryCard label="Healthy" value={healthy} icon={ShieldIcon} accent="text-emerald-600" iconBg="bg-emerald-50" />
@@ -88,13 +121,22 @@ export default async function DashboardPage() {
           <h2 className="text-lg font-semibold text-slate-900">Monitored Servers</h2>
         </div>
         <div className="mt-3">
-          <ServerTable servers={servers} />
+          {serversError ? (
+            <SectionError message="The server list could not be loaded." />
+          ) : (
+            <ServerTable servers={servers} />
+          )}
         </div>
       </section>
 
-      <section>
-        <PlaybookAnalysisPanel servers={servers} />
-      </section>
+      {/* Uploading a playbook targets a specific server, so with no fleet
+          loaded the panel has nothing to act on and would only offer a dead
+          control. */}
+      {servers.length > 0 && (
+        <section>
+          <PlaybookAnalysisPanel servers={servers} />
+        </section>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-2">
         <section>
@@ -103,7 +145,11 @@ export default async function DashboardPage() {
             <h2 className="text-lg font-semibold text-slate-900">Recent Analyses</h2>
           </div>
           <div className="mt-3">
-            <AnalysisTimeline analyses={recentAnalyses} />
+            {analysesError ? (
+              <SectionError message="Recent analyses could not be loaded." />
+            ) : (
+              <AnalysisTimeline analyses={recentAnalyses} />
+            )}
           </div>
 
           <div className="mt-6 flex items-center gap-2">

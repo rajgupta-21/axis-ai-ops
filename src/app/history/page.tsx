@@ -1,17 +1,20 @@
 import Link from "next/link";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetchSafe } from "@/lib/apiClient";
 import { AnalysisRecord } from "@/domain/analysis";
 import { RiskBadge } from "@/components/RiskBadge";
 import { formatDateTime } from "@/lib/format";
 import { HistoryIcon } from "@/components/icons";
 import { PageContainer } from "@/components/PageContainer";
+import { StatusNotice } from "@/components/StatusNotice";
 
 export const dynamic = "force-dynamic";
 
 const IMPACT_LEVELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 
 export default async function HistoryPage() {
-  const analyses = await apiFetch<AnalysisRecord[]>("/api/analyses?limit=200");
+  const result = await apiFetchSafe<AnalysisRecord[]>("/api/analyses?limit=200");
+  const analyses = result.ok ? result.data : [];
+  const error = result.ok ? null : result.error.message;
 
   const counts = IMPACT_LEVELS.map((level) => ({
     level,
@@ -32,6 +35,10 @@ export default async function HistoryPage() {
           </p>
         </div>
       </div>
+
+      {error && (
+        <StatusNotice tone="error" title="Analysis history is unavailable" message={error} />
+      )}
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -98,7 +105,9 @@ export default async function HistoryPage() {
             {analyses.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-500">
-                  No analyses have been run yet.
+                  {/* "None yet" and "we could not ask" are different facts, and
+                      showing the first when the second is true is misleading. */}
+                  {error ? "The list could not be loaded." : "No analyses have been run yet."}
                 </td>
               </tr>
             )}

@@ -2,7 +2,7 @@ import { ChatGroq } from "@langchain/groq";
 import { ChatBedrockConverse } from "@langchain/aws";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 
-const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
 const DEFAULT_BEDROCK_MODEL = "eu.amazon.nova-lite-v1:0";
 
 export function groqModelId(): string {
@@ -80,7 +80,7 @@ export function createExtractionChat(): BaseChatModel | null {
 
   return new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    model: process.env.RELEASE_EXTRACTION_MODEL_ID ?? "llama-3.1-8b-instant",
+    model: process.env.RELEASE_EXTRACTION_MODEL_ID ?? "openai/gpt-oss-20b",
     temperature: 0,
     maxRetries: 1,
   });

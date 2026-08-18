@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
-import { apiFetch, ApiError } from "@/lib/apiClient";
+import { apiFetch, apiFetchSafe } from "@/lib/apiClient";
 import { ServerDetails } from "@/domain/server";
 import { AnalysisRecord } from "@/domain/analysis";
 import { SoftwareVersionInfo } from "@/domain/software";
 import { ServerDetailTabs } from "@/components/ServerDetailTabs";
+import { PageContainer } from "@/components/PageContainer";
+import { StatusNotice } from "@/components/StatusNotice";
 
 export const dynamic = "force-dynamic";
 
@@ -14,17 +16,35 @@ export default async function ServerDetailsPage({
 }) {
   const { serverId } = await params;
 
-  let server: ServerDetails;
-  try {
-    server = await apiFetch<ServerDetails>(`/api/servers/${serverId}`);
-  } catch (error) {
-    if (error instanceof ApiError && error.code === "SERVER_NOT_FOUND") {
-      notFound();
-    }
-    throw error;
+  const serverResult = await apiFetchSafe<ServerDetails>(`/api/servers/${serverId}`);
+
+  if (!serverResult.ok) {
+    if (serverResult.error.code === "SERVER_NOT_FOUND") notFound();
+
+    // Every tab on this page is a view of the snapshot, so without it there is
+    // nothing to show — but the reason is worth showing in the app's own chrome
+    // rather than as a crashed render.
+    return (
+      <PageContainer>
+        <div className="space-y-4">
+          <h1 className="text-2xl font-semibold text-slate-900">{serverId}</h1>
+          <StatusNotice
+            tone="error"
+            title="This server could not be loaded"
+            message={serverResult.error.message}
+          />
+        </div>
+      </PageContainer>
+    );
   }
 
-  const analyses = await apiFetch<AnalysisRecord[]>(`/api/servers/${serverId}/analyses`);
+  const server = serverResult.data;
+  const staleWarning = serverResult.warning;
+
+  // Past analyses live in Postgres and need nothing from Ansible, so they stay
+  // visible even when the host itself is unreachable.
+  const analysesResult = await apiFetchSafe<AnalysisRecord[]>(`/api/servers/${serverId}/analyses`);
+  const analyses = analysesResult.ok ? analysesResult.data : [];
 
   // Deliberately NOT awaited. The software list needs a release lookup per
   // package — a web search and an LLM call each — so on a cold cache it is
@@ -39,5 +59,18 @@ export default async function ServerDetailsPage({
   // keeps it a value the UI can render as an error state.
   softwarePromise.catch(() => undefined);
 
-  return <ServerDetailTabs server={server} softwarePromise={softwarePromise} analyses={analyses} />;
+  return (
+    <>
+      {staleWarning && (
+        <div className="px-8 pt-6">
+          <StatusNotice
+            tone="warning"
+            title="Showing the last collected snapshot"
+            message={staleWarning}
+          />
+        </div>
+      )}
+      <ServerDetailTabs server={server} softwarePromise={softwarePromise} analyses={analyses} />
+    </>
+  );
 }
